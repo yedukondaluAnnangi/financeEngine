@@ -7,7 +7,7 @@ var CFG = {
 
   // ---- Where things live -------------------------------------------------
   SHEET_ID  : '181KUuScXZcuhMXYQ141nU-rXA748vQp_VS3BFFmoFdE',
-  INBOX_ID  : '1ePMFfxj8oDxl7Zk9D4wi5dLdn9I0KLi_',   // drop statements here
+  INBOX_ID  : '19M7pY_-V_5hcwfQ--gdq-B9j5ZPcVKXj',   // drop statements here
   DONE_NAME : 'Processed',      // subfolder, created automatically
   FAIL_NAME : 'Failed',         // subfolder, created automatically
 
