@@ -117,7 +117,13 @@ function runBatch(batchFolder) {
   } else {
     batchFolder.moveTo(subfolder(outbox, CFG.FAIL_NAME));
   }
-  sendBatchEmail(result);
+  try {
+    sendBatchEmail(result);
+  } catch (err) {
+    // The batch itself is done either way; make the missing email visible.
+    appendRows(getTab(SpreadsheetApp.openById(CFG.SHEET_ID), CFG.TAB_ISSUES),
+               [[new Date(), result.batch, '', 'Result email not sent', '', err.message]]);
+  }
   Logger.log(batchText(result));
   return batchText(result);
 }

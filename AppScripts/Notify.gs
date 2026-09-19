@@ -10,7 +10,24 @@
  * script runs as (your Gmail).
  */
 
-function notifyAddress() { return Session.getEffectiveUser().getEmail(); }
+/**
+ * Where mail goes: the account that owns the Inbox folder, i.e. you.
+ * Session.getEffectiveUser().getEmail() returns '' unless the manifest
+ * carries the userinfo.email scope, and MailApp then refuses to send — so
+ * the folder owner (readable with the Drive scope we already hold) comes
+ * first.
+ */
+function notifyAddress() {
+  var candidates = [
+    function () { return DriveApp.getFolderById(CFG.INBOX_ID).getOwner().getEmail(); },
+    function () { return DriveApp.getFileById(CFG.SHEET_ID).getOwner().getEmail(); },
+    function () { return Session.getEffectiveUser().getEmail(); }
+  ];
+  for (var i = 0; i < candidates.length; i++) {
+    try { var a = candidates[i](); if (a) return a; } catch (e) {}
+  }
+  throw new Error('Could not work out which address to email.');
+}
 
 function sheetUrl()  { return 'https://docs.google.com/spreadsheets/d/' + CFG.SHEET_ID + '/edit'; }
 function inboxUrl()  { return 'https://drive.google.com/drive/folders/' + CFG.INBOX_ID; }
