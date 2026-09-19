@@ -24,9 +24,13 @@ var CFG = {
   DRY_RUN        : false,  // true = parse and report, write nothing
 
   // ---- FX ----------------------------------------------------------------
-  // One flat rate applied to every rupee row. A single number you understand
-  // beats a lookup you don't.
-  INR_TO_CAD : 0.0162,
+  // One flat rate per currency, applied to every row in that currency.
+  // A single number you understand beats a lookup you don't. A currency
+  // missing here leaves Amount CAD blank and logs a note in _Issues.
+  FX_TO_CAD : {
+    CAD : 1,
+    INR : 0.0162
+  },
 
   // ---- Column order. Must match the Transactions header row. -------------
   COLS : ['Transaction ID','Date','Month','Account','Description','Payee',

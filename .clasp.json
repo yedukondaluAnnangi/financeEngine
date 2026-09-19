@@ -7,7 +7,7 @@
     "AppScripts/Config.gs",
     "AppScripts/PdfText.gs",
     "AppScripts/Parser.gs",
-    "AppScripts/Lender.gs",
+    "AppScripts/Ledger.gs",
     "AppScripts/Main.gs"
   ]
 }

@@ -17,7 +17,7 @@ issues tab so a bad parse is visible rather than silent.
 | `AppScripts/Main.gs` | the entry points you actually run |
 | `AppScripts/Parser.gs` | statement parsers |
 | `AppScripts/PdfText.gs` | PDF and spreadsheet text extraction via Drive + Docs |
-| `AppScripts/Lender.gs` | payee and category labelling |
+| `AppScripts/Ledger.gs` | dedup IDs, payee and category labelling, reversal flags |
 | `AppScripts/appsscript.json` | manifest: runtime, time zone, scopes, Drive service |
 | `.clasp.json` | binds the repo to the Apps Script project |
 | `.github/workflows/` | validate on PRs, deploy on `main` |

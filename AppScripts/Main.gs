@@ -1,7 +1,7 @@
 /**
  * Main.gs — what you actually run.
  *
- *   ingestInbox()      read every new PDF in the inbox folder
+ *   ingestInbox()      read every new PDF, CSV, spreadsheet or zip in the inbox folder
  *   relabelAll()       re-label past rows after adding patterns (Ledger.gs)
  *   testOneFile()      parse a single file and log the result, writing nothing
  *   listTabs()         show every tab name, brackets included, to spot stray spaces
@@ -59,80 +59,97 @@ function ingestInbox() {
   var doneHash = runHashSet(runs);
 
   var inbox = DriveApp.getFolderById(CFG.INBOX_ID);
-  var files = inbox.getFiles();          // PDFs, spreadsheets and CSVs alike
+  var files = inbox.getFiles();          // PDFs, spreadsheets, CSVs and zips alike
 
   var allRows = [], allIssues = [], report = [];
+
+  /**
+   * Parse one statement, write nothing yet, log the run.
+   * `load` returns { recs, acct } and may throw; everything else is shared
+   * by plain files and zip entries.
+   */
+  function ingestOne(label, fid, checksum, load) {
+    if (doneHash[checksum]) { report.push('· ' + label + ' — already ingested, skipped'); return true; }
+    try {
+      var got = load();
+      var recs = got.recs, acct = got.acct;
+      if (!recs.length) throw new Error('Parsed zero transactions — the layout has probably changed.');
+
+      var built = buildRows(recs, acct, payees, existing, allIssues, label);
+
+      // Sanity check: do the parsed amounts agree with the statement's own
+      // closing balance? Only meaningful where a balance column exists.
+      var chainNote = checkChain(recs);
+      if (chainNote) allIssues.push([new Date(), label, '', '', '', chainNote]);
+      if (chainNote && CFG.STRICT_BALANCE) throw new Error(chainNote);
+
+      allRows = allRows.concat(built.rows);
+      report.push('✓ ' + label + ' — ' + acct.name + ', ' +
+                  recs.length + ' parsed, ' + built.rows.length + ' new, ' +
+                  built.skipped + ' already there');
+
+      if (!CFG.DRY_RUN) {
+        runs.appendRow([new Date(), label, fid, checksum, acct.name,
+                        recs.length, built.rows.length, built.skipped, 'OK']);
+        doneHash[checksum] = true;
+      }
+      return true;
+
+    } catch (err) {
+      report.push('✗ ' + label + ' — ' + err.message);
+      if (!CFG.DRY_RUN) {
+        runs.appendRow([new Date(), label, fid, '', '', 0, 0, 0, 'FAILED: ' + err.message]);
+      }
+      // Deliberately NOT moved. A failure is usually about the environment
+      // (a service not switched on, a quota, a network blip) rather than the
+      // file, so the file stays in the inbox and retries on the next run.
+      return false;
+    }
+  }
 
   while (files.hasNext()) {
     var file = files.next();
     var name = file.getName();
     var fid  = file.getId();
+    var ok;
 
-    try {
-      if (!isRowFile(file) && file.getMimeType() !== MimeType.PDF) continue;
+    if (isZipFile(file)) {
+      // A bulk download (Wealthsimple's, for one) is a zip of monthly CSVs.
+      // Each entry is ingested and logged on its own, so a re-dropped zip
+      // skips the entries it already did and retries only the ones that failed.
+      ok = true;
+      var entries;
+      try {
+        entries = zipEntries(file);
+      } catch (e) {
+        report.push('✗ ' + name + ' — could not unzip: ' + e.message);
+        continue;
+      }
+      entries.forEach(function (blob) {
+        var entry = blob.getName();
+        var label = name + ' › ' + entry;
+        var checksum = shortHash('zip|' + entry + '|' + blob.getDataAsString());
+        ok = ingestOne(label, fid, checksum, function () {
+          return parseRows(csvBlobToRows(blob), entry);
+        }) && ok;
+      });
+      if (!entries.length) { report.push('✗ ' + name + ' — zip has no CSV files'); ok = false; }
 
+    } else if (isRowFile(file) || file.getMimeType() === MimeType.PDF) {
       var checksum = shortHash(fid + '|' + file.getSize() + '|' + file.getLastUpdated().getTime());
-      if (doneHash[checksum]) { report.push('· ' + name + ' — already ingested, skipped'); continue; }
+      ok = ingestOne(name, fid, checksum, function () {
+        // A spreadsheet or CSV is read as rows; a PDF is read as text.
+        // Rows are better whenever the bank offers them: the columns survive,
+        // so nothing has to be inferred.
+        if (isRowFile(file)) return parseRows(fileToRows(file), name);
+        return parsePdf(fid);
+      });
 
-      // A spreadsheet or CSV is read as rows; a PDF is read as text.
-      // Rows are better whenever the bank offers them: the columns survive,
-      // so nothing has to be inferred.
-      var rows = null, text, acct, recs;
-
-      if (isRowFile(file)) {
-        rows = fileToRows(file);
-        if (!rows || !rows.length) throw new Error('The spreadsheet came back empty.');
-        text = name + '\n' + rowsToText(rows);
-        acct = detectAccount(text);
-        if (!acct) throw new Error('Could not tell which account this is. Add a fingerprint to CFG.ACCOUNTS.');
-        if (!acct.rowParser) {
-          throw new Error(acct.name + ' has no spreadsheet parser — supply the PDF, or add a rowParser.');
-        }
-        recs = this[acct.rowParser](rows, findPeriod(text));
-      } else {
-        text = pdfToText(fid);
-        acct = detectAccount(text);
-        if (!acct) throw new Error('Could not tell which account this is. Add a fingerprint to CFG.ACCOUNTS.');
-        if (!acct.parser) {
-          throw new Error(acct.name + ' has no PDF parser — download it as Excel or Delimited instead.');
-        }
-        recs = this[acct.parser](text, findPeriod(text));
-      }
-
-      if (!recs.length) throw new Error('Parsed zero transactions — the layout has probably changed.');
-
-      var built = buildRows(recs, acct, payees, existing, allIssues, name);
-
-      // Sanity check: do the parsed amounts agree with the statement's own
-      // closing balance? Only meaningful where a balance column exists.
-      var chainNote = checkChain(recs);
-      if (chainNote) allIssues.push([new Date(), name, '', '', '', chainNote]);
-      if (chainNote && CFG.STRICT_BALANCE) throw new Error(chainNote);
-
-      allRows = allRows.concat(built.rows);
-
-      report.push('✓ ' + name + ' — ' + acct.name + ', ' +
-                  recs.length + ' parsed, ' + built.rows.length + ' new, ' +
-                  built.skipped + ' already there');
-
-      if (!CFG.DRY_RUN) {
-        runs.appendRow([new Date(), name, fid, checksum, acct.name,
-                        recs.length, built.rows.length, built.skipped, 'OK']);
-        doneHash[checksum] = true;
-        if (CFG.MOVE_WHEN_DONE) moveTo(file, inbox, CFG.DONE_NAME);
-      }
-
-    } catch (err) {
-      report.push('✗ ' + name + ' — ' + err.message);
-      if (!CFG.DRY_RUN) {
-        runs.appendRow([new Date(), name, fid, '', '', 0, 0, 0, 'FAILED: ' + err.message]);
-      }
-      // Deliberately NOT moved. A failure is usually about the environment
-      // (a service not switched on, a quota, a network blip) rather than the
-      // file, so the file stays in the inbox and retries on the next run.
-      // Moving it would mean fixing the cause and then wondering why nothing
-      // happens, because the inbox is empty.
+    } else {
+      continue;
     }
+
+    if (ok && !CFG.DRY_RUN && CFG.MOVE_WHEN_DONE) moveTo(file, inbox, CFG.DONE_NAME);
   }
 
   if (allRows.length && !CFG.DRY_RUN) {
@@ -157,22 +174,63 @@ function ingestInbox() {
 }
 
 
-/** Closing balance implied by the parsed rows vs the last stated balance. */
-function checkChain(recs) {
-  var withBal = recs.filter(function (r) { return r.balance !== null; });
-  if (withBal.length < 2) return null;
-
-  var first = withBal[0], last = withBal[withBal.length - 1];
-  var moved = 0;
-  for (var i = 1; i < withBal.length; i++) moved += withBal[i].amount;
-  var implied = round2(first.balance + moved);
-
-  if (Math.abs(implied - last.balance) > 0.02) {
-    return 'Balance chain is off: rows imply ' + implied +
-           ' but the statement closes at ' + last.balance +
-           ' (difference ' + round2(implied - last.balance) + ').';
+/** Rows from a spreadsheet or CSV -> { acct, recs }. The file name takes part in detection. */
+function parseRows(rows, fileName) {
+  if (!rows || !rows.length) throw new Error('The spreadsheet came back empty.');
+  var text = fileName + '\n' + rowsToText(rows);
+  var acct = detectAccount(text);
+  if (!acct) throw new Error('Could not tell which account this is. Add a fingerprint to CFG.ACCOUNTS.');
+  if (!acct.rowParser) {
+    throw new Error(acct.name + ' has no spreadsheet parser — supply the PDF, or add a rowParser.');
   }
-  return null;
+  // Some banks (Wealthsimple) put several accounts in one download and only
+  // the file name says which; a resolver turns the generic match into the
+  // specific account.
+  if (acct.resolver) acct = globalThis[acct.resolver](fileName, acct);
+  return { acct: acct, recs: globalThis[acct.rowParser](rows, findPeriod(text)) };
+}
+
+/** PDF -> { acct, recs }. */
+function parsePdf(fileId) {
+  var text = pdfToText(fileId);
+  var acct = detectAccount(text);
+  if (!acct) throw new Error('Could not tell which account this is. Add a fingerprint to CFG.ACCOUNTS.');
+  if (!acct.parser) {
+    throw new Error(acct.name + ' has no PDF parser — download it as Excel or Delimited instead.');
+  }
+  return { acct: acct, recs: globalThis[acct.parser](text, findPeriod(text)) };
+}
+
+
+/**
+ * Closing balance implied by the parsed rows vs the last stated balance.
+ * Checked per currency: a Wealthsimple account keeps a separate CAD and USD
+ * balance in the same file.
+ */
+function checkChain(recs) {
+  var groups = {}, order = [];
+  recs.forEach(function (r) {
+    if (r.balance === null || r.balance === undefined) return;
+    var c = r.currency || '';
+    if (!groups[c]) { groups[c] = []; order.push(c); }
+    groups[c].push(r);
+  });
+
+  var notes = [];
+  order.forEach(function (c) {
+    var withBal = groups[c];
+    if (withBal.length < 2) return;
+    var first = withBal[0], last = withBal[withBal.length - 1];
+    var moved = 0;
+    for (var i = 1; i < withBal.length; i++) moved += withBal[i].amount;
+    var implied = round2(first.balance + moved);
+    if (Math.abs(implied - last.balance) > 0.02) {
+      notes.push('Balance chain is off' + (c ? ' (' + c + ')' : '') + ': rows imply ' + implied +
+                 ' but the statement closes at ' + last.balance +
+                 ' (difference ' + round2(implied - last.balance) + ').');
+    }
+  });
+  return notes.length ? notes.join(' ') : null;
 }
 
 
@@ -220,7 +278,7 @@ function setUpSheets() {
 }
 
 
-/** Parse one file and log what would happen. Writes nothing. */
+/** Parse the first statement in the inbox and log what would happen. Writes nothing. */
 function testOneFile() {
   var inbox = DriveApp.getFolderById(CFG.INBOX_ID);
   var files = inbox.getFiles();
@@ -228,42 +286,46 @@ function testOneFile() {
 
   while (files.hasNext()) {
     var f = files.next();
-    if (isRowFile(f) || f.getMimeType() === MimeType.PDF) { file = f; break; }
+    if (isZipFile(f) || isRowFile(f) || f.getMimeType() === MimeType.PDF) { file = f; break; }
   }
   if (!file) { Logger.log('Inbox has no statement files.'); return; }
 
-  var rows = null, text, acct, recs, period;
-
-  if (isRowFile(file)) {
-    rows = fileToRows(file);
-    text = file.getName() + '\n' + rowsToText(rows);
-    Logger.log('File: ' + file.getName() + '  (spreadsheet, ' + rows.length + ' rows)');
-  } else {
-    text = pdfToText(file.getId());
-    Logger.log('File: ' + file.getName() + '  (PDF)');
+  if (isZipFile(file)) {
+    var entries = zipEntries(file);
+    Logger.log('Zip: ' + file.getName() + '  (' + entries.length + ' CSV files)');
+    entries.forEach(function (blob) {
+      try {
+        logParsed(blob.getName(), parseRows(csvBlobToRows(blob), blob.getName()), 5);
+      } catch (e) {
+        Logger.log('✗ ' + blob.getName() + ' — ' + e.message);
+      }
+    });
+    return;
   }
 
-  acct = detectAccount(text);
-  Logger.log('Account: ' + (acct ? acct.name : 'NOT RECOGNISED'));
-  if (!acct) { Logger.log(text.substring(0, 1500)); return; }
+  var got;
+  if (isRowFile(file)) {
+    Logger.log('File: ' + file.getName() + '  (spreadsheet)');
+    got = parseRows(fileToRows(file), file.getName());
+  } else {
+    Logger.log('File: ' + file.getName() + '  (PDF)');
+    got = parsePdf(file.getId());
+  }
+  logParsed(file.getName(), got, 15);
+}
 
-  period = findPeriod(text);
-  Logger.log('Period: ' + iso(period.start) + ' to ' + iso(period.end));
-
-  recs = rows ? this[acct.rowParser](rows, period) : this[acct.parser](text, period);
-
-  Logger.log('Parsed ' + recs.length + ' transactions. First 15:');
-  recs.slice(0, 15).forEach(function (r) {
-    Logger.log('  ' + iso(r.date) + '  ' + r.amount.toFixed(2) +
+function logParsed(label, got, show) {
+  var recs = got.recs;
+  Logger.log('— ' + label + '\n  Account: ' + got.acct.name + ', ' + recs.length + ' transactions');
+  recs.slice(0, show).forEach(function (r) {
+    Logger.log('  ' + iso(r.date) + '  ' + r.amount.toFixed(2) + ' ' + (r.currency || got.acct.currency) +
                '  ' + r.desc.substring(0, 60) + (r.warn ? '   [' + r.warn + ']' : ''));
   });
-
   var into = 0, outof = 0;
   recs.forEach(function (r) { if (r.amount > 0) into += r.amount; else outof += r.amount; });
-  Logger.log('In ' + round2(into).toFixed(2) + ', out ' + round2(outof).toFixed(2));
-
+  Logger.log('  In ' + round2(into).toFixed(2) + ', out ' + round2(outof).toFixed(2));
   var note = checkChain(recs);
-  Logger.log(note ? 'CHAIN: ' + note : 'Balance chain agrees with the statement.');
+  Logger.log(note ? '  CHAIN: ' + note : '  Balance chain agrees with the statement.');
 }
 
 
@@ -283,6 +345,7 @@ function onOpen() {
     .createMenu('Finance')
     .addItem('Ingest new statements', 'ingestInbox')
     .addItem('Re-label unlabelled rows', 'relabelAll')
+    .addItem('Re-label everything from Payees tab', 'relabelEverything')
     .addSeparator()
     .addItem('Test parse one file (no writing)', 'testOneFile')
     .addItem('List tab names', 'listTabs')

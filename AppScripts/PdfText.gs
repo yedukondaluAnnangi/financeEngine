@@ -293,12 +293,7 @@ function fileToRows(file) {
   var name = file.getName(), mime = file.getMimeType();
 
   if (/\.csv$/i.test(name) || /\.txt$/i.test(name) || mime === MimeType.CSV || mime === MimeType.PLAIN_TEXT) {
-    var txt = file.getBlob().getDataAsString();
-    // HDFC's "Delimited" export is comma separated; a tab export is possible too.
-    if (txt.indexOf('\t') !== -1 && txt.indexOf(',') === -1) {
-      return txt.split(/[\r\n]+/).map(function (l) { return l.split('\t'); });
-    }
-    return Utilities.parseCsv(txt);
+    return csvBlobToRows(file.getBlob());
   }
 
   if (typeof Drive === 'undefined' || !Drive.Files) {
@@ -317,6 +312,32 @@ function fileToRows(file) {
   } finally {
     if (tmpId) { try { DriveApp.getFileById(tmpId).setTrashed(true); } catch (e) {} }
   }
+}
+
+/** A CSV or tab-separated blob as a 2D array of strings. */
+function csvBlobToRows(blob) {
+  // Strip a UTF-8 byte-order mark, or the first header cell never matches.
+  var txt = blob.getDataAsString().replace(/^﻿/, '');
+  // HDFC's "Delimited" export is comma separated; a tab export is possible too.
+  if (txt.indexOf('\t') !== -1 && txt.indexOf(',') === -1) {
+    return txt.split(/[\r\n]+/).map(function (l) { return l.split('\t'); });
+  }
+  return Utilities.parseCsv(txt);
+}
+
+/** Is this file a zip archive (a bulk download of monthly CSVs)? */
+function isZipFile(file) {
+  var n = file.getName(), m = file.getMimeType();
+  return /\.zip$/i.test(n) || m === MimeType.ZIP || m === 'application/x-zip-compressed';
+}
+
+/** The CSV entries inside a zip, as blobs. macOS resource forks are skipped. */
+function zipEntries(file) {
+  var blob = file.getBlob().setContentType(MimeType.ZIP);
+  return Utilities.unzip(blob).filter(function (b) {
+    var n = b.getName();
+    return /\.csv$/i.test(n) && !/(^|\/)__MACOSX\//.test(n) && !/(^|\/)\._/.test(n);
+  });
 }
 
 /** Flatten rows into text, only so the account fingerprints can be matched. */

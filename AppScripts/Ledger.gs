@@ -58,7 +58,9 @@ function readPayees(ss) {
   var last = sh.getLastRow();
   if (last < 2) return [];
 
-  var vals = sh.getRange(2, 1, last - 1, 3).getValues();
+  // Columns: Pattern | Payee | Default Category | Amount (optional)
+  var width = Math.max(3, Math.min(4, sh.getLastColumn()));
+  var vals = sh.getRange(2, 1, last - 1, width).getValues();
   var out = [];
   vals.forEach(function (r, i) {
     var pat = String(r[0] || '').trim();
@@ -72,17 +74,69 @@ function readPayees(ss) {
       re = new RegExp(pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
       out.badRegexRow = i + 2;
     }
-    out.push({ re: re, payee: String(r[1] || '').trim(), category: String(r[2] || '').trim(), row: i + 2 });
+    out.push({
+      re: re,
+      payee: String(r[1] || '').trim(),
+      category: String(r[2] || '').trim(),
+      amount: parseAmountRule(r[3]),
+      row: i + 2
+    });
   });
   return out;
 }
 
-/** First pattern that matches wins, so order the Payees tab specific-first. */
-function labelFor(desc, payees) {
-  for (var i = 0; i < payees.length; i++) {
-    if (payees[i].re.test(desc)) return payees[i];
-  }
+/**
+ * Optional Amount column on the Payees tab, compared against the absolute
+ * amount, in the row's own currency:
+ *   39388.30        that amount, give or take 1
+ *   38000-40000     anything in the range
+ *   blank           any amount
+ * Needed where the description does not name the recipient — a PhonePe bill
+ * payment reads "UPI-PHONEPE-…" whether it paid the Kotak EMI or a recharge.
+ */
+function parseAmountRule(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return { lo: Math.abs(v) - 1, hi: Math.abs(v) + 1 };
+  var s = String(v).replace(/[,\s₹$]/g, '');
+  var m = s.match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)$/);
+  if (m) return { lo: Math.min(+m[1], +m[2]), hi: Math.max(+m[1], +m[2]) };
+  if (/^\d+(\.\d+)?$/.test(s)) return { lo: +s - 1, hi: +s + 1 };
   return null;
+}
+
+/**
+ * First matching Payees row wins, so order the tab specific-first (a row with
+ * an amount above the same pattern without one). If nothing matches and the
+ * line is a UPI payment to a person, the person's name from the narration
+ * becomes the payee, with category "Unknown - check" until you name it.
+ */
+function labelFor(desc, payees, amount) {
+  var abs = (typeof amount === 'number') ? Math.abs(amount) : null;
+  for (var i = 0; i < payees.length; i++) {
+    var p = payees[i];
+    if (!p.re.test(desc)) continue;
+    if (p.amount && (abs === null || abs < p.amount.lo || abs > p.amount.hi)) continue;
+    return p;
+  }
+  var who = upiPayee(desc);
+  return who ? { payee: who, category: 'Unknown - check', auto: true } : null;
+}
+
+/**
+ * The recipient's name from an Indian bank UPI narration:
+ *   UPI-VENNA VENKATA REDDY-reddyvenna8910@okicici-SBIN0020581-1534…-KULI
+ *       -> "Venna Venkata Reddy"
+ * Payments through an app's own merchant account (PhonePe bill pay, Paytm,
+ * autopay mandates) name the app, not who was paid, so they return null and
+ * need a Payees row, usually with an amount.
+ */
+function upiPayee(desc) {
+  var m = String(desc || '').match(/^UPI-([^-@]+?)-[^-\s]*@/i);
+  if (!m) return null;
+  var name = m[1].replace(/\s+/g, ' ').trim();
+  if (!name || /^(PHONEPE|PAYTM|GOOGLE ?PAY|GPAY|BHARATPE|CRED|AMAZON ?PAY|AUTOPAY|MOBIKWIK|RAZORPAY)\b/i.test(name)) return null;
+  if (!/[A-Za-z]{2}/.test(name)) return null;
+  return name.toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
 }
 
 
@@ -121,10 +175,16 @@ function buildRows(records, account, payees, existing, issues, sourceName) {
     if (existing[id]) { skipped++; return; }
     existing[id] = true;
 
-    var hit = CFG.WRITE_LABELS ? labelFor(r.desc, payees) : null;
-    var amountCad = (account.currency === 'CAD')
-      ? round2(r.amount)
-      : round2(r.amount * CFG.INR_TO_CAD);
+    var hit = CFG.WRITE_LABELS ? labelFor(r.desc, payees, r.amount) : null;
+    // A record may carry its own currency (Wealthsimple mixes CAD and USD
+    // in one account); otherwise it is the account's.
+    var currency = r.currency || account.currency;
+    var rate = CFG.FX_TO_CAD[currency];
+    var amountCad = (rate === undefined) ? '' : round2(r.amount * rate);
+    if (rate === undefined) {
+      issues.push([new Date(), sourceName, isoDate, r.desc.substring(0, 120), r.amount,
+                   'No rate for ' + currency + ' in CFG.FX_TO_CAD']);
+    }
 
     if (r.warn) {
       issues.push([new Date(), sourceName, isoDate, r.desc.substring(0, 120), r.amount, r.warn]);
@@ -138,11 +198,11 @@ function buildRows(records, account, payees, existing, issues, sourceName) {
     row[4]  = r.desc;                                   // raw, never rewritten
     row[5]  = hit ? hit.payee : (CFG.WRITE_LABELS ? 'Needs labelling' : '');
     row[6]  = round2(r.amount);
-    row[7]  = account.currency;
+    row[7]  = currency;
     row[8]  = amountCad;
     row[9]  = hit ? hit.category : '';
     row[10] = '';                                       // Notion Task
-    row[11] = r.warn ? 'Check' : '';
+    row[11] = r.warn ? 'Check' : (r.status || '');
     rows.push(row);
   });
 
@@ -168,7 +228,11 @@ function flagReversals(sh) {
   vals.forEach(function (r, i) {
     var amt = Number(r[6]);
     if (!amt) return;
-    var k = r[3] + '|' + Math.abs(amt).toFixed(2);
+    // Rows that already carry a status (e.g. 'Internal FX') are not candidates:
+    // a CAD->USD conversion followed by a USD purchase is not a reversal.
+    var st = String(r[11] || '');
+    if (st && st.indexOf('Reversal') === -1) return;
+    var k = r[3] + '|' + r[7] + '|' + Math.abs(amt).toFixed(2);
     (byKey[k] = byKey[k] || []).push({ i: i, amt: amt, d: new Date(r[1]), status: String(r[11] || '') });
   });
 
@@ -213,11 +277,47 @@ function relabelAll() {
   vals.forEach(function (r) {
     var cur = String(r[5] || '').trim();
     if (cur && cur !== 'Needs labelling') return;        // hand-set, leave it
-    var hit = labelFor(String(r[4] || ''), payees);
+    var hit = labelFor(String(r[4] || ''), payees, Number(r[6]));
     if (hit) { r[5] = hit.payee; if (!r[9]) r[9] = hit.category; changed++; }
     else if (!cur) { r[5] = 'Needs labelling'; }
   });
 
   rng.setValues(vals);
   return 'Labelled ' + changed + ' row(s).';
+}
+
+
+/**
+ * Re-apply the Payees tab to EVERY row, overwriting Payee and Category
+ * wherever a Payees row (or a UPI name) matches. Use it after changing a
+ * pattern, so old labels update without editing cells by hand.
+ * Rows that match nothing are left exactly as they are, so a hand label on
+ * a line no pattern covers survives. A hand label on a line a pattern does
+ * cover is replaced — change the Payees row instead.
+ */
+function relabelEverything() {
+  var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
+  var sh = getTab(ss, CFG.TAB_TX);
+  if (!sh) throw new Error('No tab named "' + CFG.TAB_TX + '". Run listTabs to see the real names.');
+  var payees = readPayees(ss);
+  var last = sh.getLastRow();
+  if (last < 2) return 'Nothing to label.';
+
+  var rng = sh.getRange(2, 1, last - 1, CFG.COLS.length);
+  var vals = rng.getValues();
+  var changed = 0;
+
+  vals.forEach(function (r) {
+    var hit = labelFor(String(r[4] || ''), payees, Number(r[6]));
+    if (!hit) return;
+    if (hit.auto && r[5] && r[5] !== 'Needs labelling' && r[9] && r[9] !== 'Unknown - check') return; // keep a real label over a bare name
+    if (r[5] !== hit.payee || r[9] !== hit.category) {
+      r[5] = hit.payee; r[9] = hit.category; changed++;
+    }
+  });
+
+  rng.setValues(vals);
+  var msg = 'Updated ' + changed + ' row(s).';
+  Logger.log(msg);
+  return msg;
 }
