@@ -247,7 +247,7 @@ function logRuns(result) {
   var now = new Date(), status;
   var out = result.items.map(function (u) {
     if (u.ignored) status = 'IGNORED';
-    else if (u.duplicate) status = 'OK (already ingested)';
+    else if (u.duplicate) status = result.ok ? 'OK (already ingested)' : 'HELD (already ingested; another file in the batch failed)';
     else if (u.check && u.check.errors.length) status = 'FAILED: ' + u.check.errors.join(' | ');
     else if (!result.ok) status = 'HELD: another file in the batch failed';
     else status = 'OK';

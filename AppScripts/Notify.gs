@@ -48,7 +48,7 @@ function button(url, label) {
 
 function itemStatus(u, result) {
   if (u.ignored) return 'Ignored (not ingested by design)';
-  if (u.duplicate) return 'Already ingested — skipped';
+  if (u.duplicate) return result.ok || result.dryRun ? 'Already ingested — skipped' : 'Already ingested — held with the batch';
   if (u.check && u.check.errors.length) return 'FAILED';
   if (result.dryRun) return 'Passed (dry run)';
   if (!result.ok) return 'Held back — another file failed';
