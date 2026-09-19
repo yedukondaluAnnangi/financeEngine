@@ -294,6 +294,80 @@ function parseHdfcSavingsRows(rows, period) {
    parseDateText, which reads nn/nn/nnnn as day-first.
    ======================================================================== */
 
+/* ========================================================================
+   CIBC chequing - CSV download
+   Columns, no header:  Date (YYYY-MM-DD) | Description | Debit | Credit
+   A card account adds a fifth column (card number); it is ignored.
+   No balance column, so there is no chain to check.
+   ======================================================================== */
+
+function parseCibcRows(rows, period) {
+  var out = [];
+  rows.forEach(function (r) {
+    if (!r || r.length < 4) return;
+    var m = String(r[0] || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return;
+    var debit = cellNum(r[2]), credit = cellNum(r[3]);
+    if (debit === null && credit === null) return;
+    var amount = round2((credit || 0) - (debit || 0));
+    if (!amount) return;
+    out.push({
+      date: new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])),
+      desc: squash(r[1]) || '(no description)',
+      amount: amount,
+      balance: null,
+      warn: null
+    });
+  });
+  return out;
+}
+
+/* ========================================================================
+   RBC chequing - CSV download ("download-transactions.csv")
+   Header: Account Type | Account Number | Transaction Date | Cheque Number |
+           Description 1 | Description 2 | CAD$ | USD$
+   Amounts are already signed. Dates are M/D/YYYY. Columns are found by
+   header name, so a reordered export still reads correctly.
+   ======================================================================== */
+
+function parseRbcRows(rows, period) {
+  var col = { date: 2, d1: 4, d2: 5, cad: 6, usd: 7 };
+  for (var h = 0; h < Math.min(rows.length, 5); h++) {
+    var hdr = rows[h].map(function (c) { return String(c || '').trim().toLowerCase(); });
+    if (hdr.indexOf('transaction date') === -1) continue;
+    col = { date: hdr.indexOf('transaction date'), d1: hdr.indexOf('description 1'),
+            d2: hdr.indexOf('description 2'), cad: hdr.indexOf('cad$'), usd: hdr.indexOf('usd$') };
+    break;
+  }
+
+  var out = [];
+  rows.forEach(function (r) {
+    var raw = r[col.date], d = null;
+    if (raw instanceof Date) {
+      d = new Date(Date.UTC(raw.getFullYear(), raw.getMonth(), raw.getDate()));
+    } else {
+      var m = String(raw || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) d = new Date(Date.UTC(+m[3], +m[1] - 1, +m[2]));
+    }
+    if (!d) return;                                   // header or blank line
+
+    var cad = cellNum(r[col.cad]);
+    var usd = col.usd >= 0 ? cellNum(r[col.usd]) : null;
+    var amount = cad !== null ? cad : usd;
+    if (!amount) return;
+
+    out.push({
+      date: d,
+      desc: squash([r[col.d1], col.d2 >= 0 ? r[col.d2] : ''].join(' ')) || '(no description)',
+      amount: round2(amount),
+      currency: cad !== null ? 'CAD' : 'USD',
+      balance: null,
+      warn: null
+    });
+  });
+  return out;
+}
+
 function parseTdRows(rows, period) {
   var out = [];
   rows.forEach(function (r) {

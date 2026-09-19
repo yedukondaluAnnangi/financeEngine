@@ -54,6 +54,15 @@ var CFG = {
   ACCOUNTS : [
     // TD CSV has no bank name inside, so it is matched by TD's default file name.
     { test: 'accountactivity',        key: 'TD_BUS',    name: 'TD Business Chequing',   currency: 'CAD', rowParser: 'parseTdRows' },
+
+    // CIBC CSVs carry no account number, and each account's file names the
+    // other one in its transfer lines, so only the file name can tell them
+    // apart. Rename the download to end in 096.csv or 680.csv.
+    { file: /096\.csv$/i,             key: 'CIBC_CHQ',  name: 'CIBC Chequing 73-83096', currency: 'CAD', rowParser: 'parseCibcRows' },
+    { file: /680\.csv$/i,             key: 'CIBC_680',  name: 'CIBC ••680',             currency: 'CAD', rowParser: 'parseCibcRows' },
+    // RBC CSV names the account number on every row. Above the PDF rules.
+    { test: '5101324',                key: 'RBC_CHQ',   name: 'RBC Chequing ••1324',    currency: 'CAD', parser: 'parseRbc', rowParser: 'parseRbcRows' },
+
     { test: 'neofinancial.com',       key: 'NEO_CARD',  name: 'Neo Mastercard ••0141',  currency: 'CAD', parser: 'parseNeo' },
     { test: 'RoyalBankofCanada',      key: 'RBC_CHQ',   name: 'RBC Chequing ••1324',    currency: 'CAD', parser: 'parseRbc' },
     { test: 'Royal Bank of Canada',   key: 'RBC_CHQ',   name: 'RBC Chequing ••1324',    currency: 'CAD', parser: 'parseRbc' },

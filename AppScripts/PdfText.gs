@@ -266,10 +266,19 @@ function mkPeriod(d1, mon1, y1, d2, mon2, y2) {
   };
 }
 
-function detectAccount(text) {
+/**
+ * A rule with `file` (a regex) is matched against the file name only, and is
+ * skipped when there is no file name (a PDF). A rule with `test` is matched
+ * against the text, which for a spreadsheet includes the file name.
+ */
+function detectAccount(text, fileName) {
   var s = squash(text), g = deSpace(text);
   for (var i = 0; i < CFG.ACCOUNTS.length; i++) {
     var a = CFG.ACCOUNTS[i];
+    if (a.file) {
+      if (fileName && a.file.test(fileName)) return a;
+      continue;
+    }
     if (s.indexOf(a.test) !== -1 || g.indexOf(deSpace(a.test)) !== -1) return a;
   }
   return null;

@@ -321,3 +321,39 @@ function relabelEverything() {
   Logger.log(msg);
   return msg;
 }
+
+
+/**
+ * ONE-OFF. Run once, before ingesting the CIBC and RBC CSVs.
+ * Deletes the PDF-sourced rows the CSVs replace: every CIBC Chequing row, and
+ * RBC rows dated 2026-08-21 or later. The CSV descriptions differ from the
+ * PDF text, so without this both copies would stay (different IDs).
+ * A script property stops a second run from deleting the CSV rows too.
+ */
+function replacePdfRowsWithCsv() {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('replacePdfRowsWithCsv_done')) {
+    throw new Error('Already run on ' + props.getProperty('replacePdfRowsWithCsv_done') + '. Running again would delete the CSV rows.');
+  }
+  var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
+  var sh = getTab(ss, CFG.TAB_TX);
+  var last = sh.getLastRow();
+  if (last < 2) return 'Nothing to delete.';
+
+  var vals = sh.getRange(2, 1, last - 1, CFG.COLS.length).getValues();
+  var doomed = [];
+  vals.forEach(function (r, i) {
+    var acct = String(r[3]);
+    var d = r[1] instanceof Date ? iso(new Date(Date.UTC(r[1].getFullYear(), r[1].getMonth(), r[1].getDate())))
+                                 : String(r[1]).substring(0, 10);
+    if (acct === 'CIBC Chequing 73-83096' ||
+        (acct === 'RBC Chequing ••1324' && d >= '2026-08-21')) doomed.push(i + 2);
+  });
+
+  // Bottom-up so earlier row numbers stay valid.
+  for (var k = doomed.length - 1; k >= 0; k--) sh.deleteRow(doomed[k]);
+  props.setProperty('replacePdfRowsWithCsv_done', new Date().toISOString());
+  var msg = 'Deleted ' + doomed.length + ' row(s).';
+  Logger.log(msg);
+  return msg;
+}

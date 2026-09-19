@@ -178,7 +178,7 @@ function ingestInbox() {
 function parseRows(rows, fileName) {
   if (!rows || !rows.length) throw new Error('The spreadsheet came back empty.');
   var text = fileName + '\n' + rowsToText(rows);
-  var acct = detectAccount(text);
+  var acct = detectAccount(text, fileName);
   if (!acct) throw new Error('Could not tell which account this is. Add a fingerprint to CFG.ACCOUNTS.');
   if (!acct.rowParser) {
     throw new Error(acct.name + ' has no spreadsheet parser — supply the PDF, or add a rowParser.');
