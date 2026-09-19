@@ -33,6 +33,7 @@ var CFG = {
   SETTLE_MINUTES : 2,
   MAX_RETRIES    : 3,       // transient errors (Drive hiccups) before a batch counts as failed
   REMINDER       : { weekday: 'FRIDAY', hour: 6 },   // upload reminder email
+  REMINDER_TEST  : '2026-09-19',   // change to any new value to get one test reminder on the next poll; '' = off
 
   // Files that are never ingested and never fail a batch; moved to Outbox › Ignored.
   // Wealthsimple is tracked in Notion (Finance › Investments), not the sheet.

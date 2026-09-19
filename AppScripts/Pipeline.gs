@@ -23,6 +23,14 @@ function pollInbox() {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return;               // a previous poll is still working
   try {
+    // One-off: send the reminder once to prove it works without waiting for
+    // Friday. Bump CFG.REMINDER_TEST to send another test.
+    var props = PropertiesService.getScriptProperties();
+    if (CFG.REMINDER_TEST && props.getProperty('reminder_test') !== CFG.REMINDER_TEST) {
+      props.setProperty('reminder_test', CFG.REMINDER_TEST);
+      sendUploadReminder();
+    }
+
     var staging = subfolder(DriveApp.getFolderById(CFG.OUTBOX_ID), CFG.STAGING_NAME);
 
     // A batch left in Staging by a transient error goes first.
