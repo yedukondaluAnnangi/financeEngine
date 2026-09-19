@@ -7,21 +7,67 @@ var CFG = {
 
   // ---- Where things live -------------------------------------------------
   SHEET_ID  : '181KUuScXZcuhMXYQ141nU-rXA748vQp_VS3BFFmoFdE',
-  INBOX_ID  : '19M7pY_-V_5hcwfQ--gdq-B9j5ZPcVKXj',   // drop statements here
-  DONE_NAME : 'Processed',      // subfolder, created automatically
-  FAIL_NAME : 'Failed',         // subfolder, created automatically
+  INBOX_ID  : '19M7pY_-V_5hcwfQ--gdq-B9j5ZPcVKXj',   // Bankstatements › Inbox — you upload here
+  OUTBOX_ID : '1ePMFfxj8oDxl7Zk9D4wi5dLdn9I0KLi_',   // Bankstatements › Outbox — the script's side
+  STAGING_NAME : 'Staging',     // Outbox subfolders, created automatically
+  DONE_NAME    : 'Processed',
+  FAIL_NAME    : 'Failed',
+  IGNORED_NAME : 'Ignored',
 
   // ---- Tabs --------------------------------------------------------------
-  TAB_TX     : 'Transactions',
-  TAB_PAYEES : 'Payees',
-  TAB_RUNS   : '_Runs',         // audit log, created automatically
-  TAB_ISSUES : '_Issues',       // parse warnings, created automatically
+  TAB_TX       : 'Transactions',
+  TAB_PAYEES   : 'Payees',
+  TAB_RUNS     : '_Runs',       // audit log, created automatically
+  TAB_ISSUES   : '_Issues',     // parse warnings, created automatically
+  TAB_BALANCES : '_Balances',   // closing balance per account per file, created automatically
 
   // ---- Behaviour ---------------------------------------------------------
-  MOVE_WHEN_DONE : true,   // move files out of the inbox after ingest
   WRITE_LABELS   : true,   // script fills Payee + Category
-  STRICT_BALANCE : false,  // true = reject a statement whose balance chain breaks
-  DRY_RUN        : false,  // true = parse and report, write nothing
+  DRY_RUN        : false,  // true = check and email, write and move nothing
+
+  // ---- Automation --------------------------------------------------------
+  // pollInbox runs every POLL_MINUTES. It does nothing, and sends nothing,
+  // while the Inbox is empty or a file arrived less than SETTLE_MINUTES ago
+  // (so a multi-file upload is handled as one batch).
+  POLL_MINUTES   : 5,
+  SETTLE_MINUTES : 2,
+  MAX_RETRIES    : 3,       // transient errors (Drive hiccups) before a batch counts as failed
+  REMINDER       : { weekday: 'FRIDAY', hour: 6 },   // upload reminder email
+
+  // Files that are never ingested and never fail a batch; moved to Outbox › Ignored.
+  // Wealthsimple is tracked in Notion (Finance › Investments), not the sheet.
+  IGNORE : [/^monthly-statements-.*\.zip$/i, /wealthsimple/i],
+
+  /**
+   * What the weekly reminder lists, one entry per account key.
+   *   accepts   file types the checks allow for this account
+   *   cadence   'any-date' = download any date range (CSV banks)
+   *             'statement' = only closed statements exist (PDF cards)
+   * Login links are the banks' public sign-in pages. Edit freely.
+   */
+  BANKS : {
+    NEO_CARD : { accepts: ['pdf', 'csv'], cadence: 'any-date',
+                 login: 'https://member.neofinancial.com/',
+                 howTo: 'Card › Transactions › Download CSV (or the monthly statement PDF). Keep the default file name.' },
+    RBC_CHQ  : { accepts: ['csv', 'pdf'], cadence: 'any-date',
+                 login: 'https://secure.royalbank.com/statics/login-service-ui/index#/full/signin?LANGUAGE=ENGLISH',
+                 howTo: 'Chequing ••1324 › Download transactions › CSV. Keep "download-transactions.csv".' },
+    CIBC_CHQ : { accepts: ['csv'], cadence: 'any-date',
+                 login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
+                 howTo: 'Chequing 73-83096 › Download transactions › CSV. Rename so the name ends in 096.csv.' },
+    CIBC_680 : { accepts: ['csv'], cadence: 'any-date',
+                 login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
+                 howTo: 'Account ••680 › Download transactions › CSV. Rename so the name ends in 680.csv.' },
+    TD_BUS   : { accepts: ['csv'], cadence: 'any-date',
+                 login: 'https://easyweb.td.com/',
+                 howTo: 'Business Chequing › Download › CSV. Keep "accountactivity.csv".' },
+    HDFC_SAV : { accepts: ['xls', 'xlsx', 'csv', 'txt'], cadence: 'any-date',
+                 login: 'https://netbanking.hdfcbank.com/netbanking/',
+                 howTo: 'Savings ••7203 › Account Statement › choose XLS (not PDF — it is password-protected).' },
+    HDFC_CARD: { accepts: ['pdf'], cadence: 'statement',
+                 login: 'https://netbanking.hdfcbank.com/netbanking/',
+                 howTo: 'Cards › Regalia ••4351 › Billed statement › PDF.' }
+  },
 
   // ---- FX ----------------------------------------------------------------
   // One flat rate per currency, applied to every row in that currency.
@@ -63,6 +109,8 @@ var CFG = {
     // RBC CSV names the account number on every row. Above the PDF rules.
     { test: '5101324',                key: 'RBC_CHQ',   name: 'RBC Chequing ••1324',    currency: 'CAD', parser: 'parseRbc', rowParser: 'parseRbcRows' },
 
+    // Neo CSV has no bank name inside; its default file name does.
+    { test: 'NeoWorldMastercard',     key: 'NEO_CARD',  name: 'Neo Mastercard ••0141',  currency: 'CAD', parser: 'parseNeo', rowParser: 'parseNeoRows' },
     { test: 'neofinancial.com',       key: 'NEO_CARD',  name: 'Neo Mastercard ••0141',  currency: 'CAD', parser: 'parseNeo' },
     { test: 'RoyalBankofCanada',      key: 'RBC_CHQ',   name: 'RBC Chequing ••1324',    currency: 'CAD', parser: 'parseRbc' },
     { test: 'Royal Bank of Canada',   key: 'RBC_CHQ',   name: 'RBC Chequing ••1324',    currency: 'CAD', parser: 'parseRbc' },

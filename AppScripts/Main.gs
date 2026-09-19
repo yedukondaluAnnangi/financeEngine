@@ -1,12 +1,16 @@
 /**
  * Main.gs — what you actually run.
  *
- *   ingestInbox()      read every new PDF, CSV, spreadsheet or zip in the inbox folder
- *   relabelAll()       re-label past rows after adding patterns (Ledger.gs)
- *   testOneFile()      parse a single file and log the result, writing nothing
- *   listTabs()         show every tab name, brackets included, to spot stray spaces
- *   setUpSheets()      create the housekeeping tabs
- *   installTrigger()   run it automatically every Friday evening
+ * Day to day nothing: upload statements to the Inbox and Pipeline.gs does the
+ * rest (see installTriggers). From the editor's function dropdown:
+ *
+ *   installTriggers()    once: 5-minute Inbox poll + Friday-morning reminder email
+ *   processInboxNow()    run the pipeline on the Inbox immediately
+ *   dryRunInbox()        check the Inbox and email the result, writing nothing
+ *   sendUploadReminder() send the reminder email now
+ *   relabelEverything()  re-apply the Payees tab to every row (Ledger.gs)
+ *   testOneFile()        parse one Inbox file and log it, writing nothing
+ *   listTabs()           show every tab name, brackets included, to spot stray spaces
  */
 
 
@@ -41,136 +45,9 @@ function listTabs() {
 }
 
 
+/** Kept for muscle memory: same as processInboxNow(). */
 function ingestInbox() {
-  var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
-  setUpSheets();
-
-  var tx     = getTab(ss, CFG.TAB_TX);
-  var runs   = getTab(ss, CFG.TAB_RUNS);
-  var issues = getTab(ss, CFG.TAB_ISSUES);
-
-  if (!tx) {
-    throw new Error('No tab named "' + CFG.TAB_TX + '". Tabs found: ' + tabNames(ss) +
-                    '  — rename the tab, or set CFG.TAB_TX to match.');
-  }
-
-  var payees   = readPayees(ss);
-  var existing = existingIdSet(tx);
-  var doneHash = runHashSet(runs);
-
-  var inbox = DriveApp.getFolderById(CFG.INBOX_ID);
-  var files = inbox.getFiles();          // PDFs, spreadsheets, CSVs and zips alike
-
-  var allRows = [], allIssues = [], report = [];
-
-  /**
-   * Parse one statement, write nothing yet, log the run.
-   * `load` returns { recs, acct } and may throw; everything else is shared
-   * by plain files and zip entries.
-   */
-  function ingestOne(label, fid, checksum, load) {
-    if (doneHash[checksum]) { report.push('· ' + label + ' — already ingested, skipped'); return true; }
-    try {
-      var got = load();
-      var recs = got.recs, acct = got.acct;
-      if (!recs.length) throw new Error('Parsed zero transactions — the layout has probably changed.');
-
-      var built = buildRows(recs, acct, payees, existing, allIssues, label);
-
-      // Sanity check: do the parsed amounts agree with the statement's own
-      // closing balance? Only meaningful where a balance column exists.
-      var chainNote = checkChain(recs);
-      if (chainNote) allIssues.push([new Date(), label, '', '', '', chainNote]);
-      if (chainNote && CFG.STRICT_BALANCE) throw new Error(chainNote);
-
-      allRows = allRows.concat(built.rows);
-      report.push('✓ ' + label + ' — ' + acct.name + ', ' +
-                  recs.length + ' parsed, ' + built.rows.length + ' new, ' +
-                  built.skipped + ' already there');
-
-      if (!CFG.DRY_RUN) {
-        runs.appendRow([new Date(), label, fid, checksum, acct.name,
-                        recs.length, built.rows.length, built.skipped, 'OK']);
-        doneHash[checksum] = true;
-      }
-      return true;
-
-    } catch (err) {
-      report.push('✗ ' + label + ' — ' + err.message);
-      if (!CFG.DRY_RUN) {
-        runs.appendRow([new Date(), label, fid, '', '', 0, 0, 0, 'FAILED: ' + err.message]);
-      }
-      // Deliberately NOT moved. A failure is usually about the environment
-      // (a service not switched on, a quota, a network blip) rather than the
-      // file, so the file stays in the inbox and retries on the next run.
-      return false;
-    }
-  }
-
-  while (files.hasNext()) {
-    var file = files.next();
-    var name = file.getName();
-    var fid  = file.getId();
-    var ok;
-
-    if (isZipFile(file)) {
-      // A bulk download (Wealthsimple's, for one) is a zip of monthly CSVs.
-      // Each entry is ingested and logged on its own, so a re-dropped zip
-      // skips the entries it already did and retries only the ones that failed.
-      ok = true;
-      var entries;
-      try {
-        entries = zipEntries(file);
-      } catch (e) {
-        report.push('✗ ' + name + ' — could not unzip: ' + e.message);
-        continue;
-      }
-      entries.forEach(function (blob) {
-        var entry = blob.getName();
-        var label = name + ' › ' + entry;
-        var checksum = shortHash('zip|' + entry + '|' + blob.getDataAsString());
-        ok = ingestOne(label, fid, checksum, function () {
-          return parseRows(csvBlobToRows(blob), entry);
-        }) && ok;
-      });
-      if (!entries.length) { report.push('✗ ' + name + ' — zip has no CSV files'); ok = false; }
-
-    } else if (isRowFile(file) || file.getMimeType() === MimeType.PDF) {
-      var checksum = shortHash(fid + '|' + file.getSize() + '|' + file.getLastUpdated().getTime());
-      ok = ingestOne(name, fid, checksum, function () {
-        // A spreadsheet or CSV is read as rows; a PDF is read as text.
-        // Rows are better whenever the bank offers them: the columns survive,
-        // so nothing has to be inferred.
-        if (isRowFile(file)) return parseRows(fileToRows(file), name);
-        return parsePdf(fid);
-      });
-
-    } else {
-      continue;
-    }
-
-    if (ok && !CFG.DRY_RUN && CFG.MOVE_WHEN_DONE) moveTo(file, inbox, CFG.DONE_NAME);
-  }
-
-  if (allRows.length && !CFG.DRY_RUN) {
-    allRows.sort(function (a, b) { return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0; });
-    tx.getRange(tx.getLastRow() + 1, 1, allRows.length, CFG.COLS.length).setValues(allRows);
-  }
-
-  if (allIssues.length && !CFG.DRY_RUN) {
-    issues.getRange(issues.getLastRow() + 1, 1, allIssues.length, 6).setValues(allIssues);
-  }
-
-  var flagged = (allRows.length && !CFG.DRY_RUN) ? flagReversals(tx) : 0;
-
-  var summary = report.join('\n') +
-                '\n\n' + allRows.length + ' row(s) added' +
-                (flagged ? ', ' + flagged + ' reversal leg(s) flagged' : '') +
-                (allIssues.length ? ', ' + allIssues.length + ' note(s) in ' + CFG.TAB_ISSUES : '') +
-                (CFG.DRY_RUN ? '\n\n(DRY RUN — nothing was written.)' : '');
-
-  Logger.log(summary);
-  return summary;
+  return processInboxNow();
 }
 
 
@@ -216,18 +93,20 @@ function checkChain(recs) {
     groups[c].push(r);
   });
 
+  // Every step, not just first-to-last: an edited or misread row in the
+  // middle cancels out of the end-to-end sum but not out of its own step.
   var notes = [];
   order.forEach(function (c) {
     var withBal = groups[c];
-    if (withBal.length < 2) return;
-    var first = withBal[0], last = withBal[withBal.length - 1];
-    var moved = 0;
-    for (var i = 1; i < withBal.length; i++) moved += withBal[i].amount;
-    var implied = round2(first.balance + moved);
-    if (Math.abs(implied - last.balance) > 0.02) {
-      notes.push('Balance chain is off' + (c ? ' (' + c + ')' : '') + ': rows imply ' + implied +
-                 ' but the statement closes at ' + last.balance +
-                 ' (difference ' + round2(implied - last.balance) + ').');
+    for (var i = 1; i < withBal.length; i++) {
+      var prev = withBal[i - 1], cur = withBal[i];
+      var implied = round2(prev.balance + cur.amount);
+      if (Math.abs(implied - cur.balance) > 0.02) {
+        notes.push('Balance chain is off' + (c ? ' (' + c + ')' : '') + ' at ' + iso(cur.date) + ' "' +
+                   String(cur.desc).substring(0, 40) + '": ' + prev.balance + ' ' + (cur.amount < 0 ? '− ' : '+ ') +
+                   Math.abs(cur.amount) + ' should be ' + implied + ', statement says ' + cur.balance + '.');
+        break;
+      }
     }
   });
   return notes.length ? notes.join(' ') : null;
@@ -249,14 +128,6 @@ function runHashSet(runs) {
 }
 
 
-function moveTo(file, parent, subName) {
-  var it = parent.getFoldersByName(subName);
-  var dest = it.hasNext() ? it.next() : parent.createFolder(subName);
-  dest.addFile(file);
-  parent.removeFile(file);
-}
-
-
 function setUpSheets() {
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
 
@@ -269,6 +140,11 @@ function setUpSheets() {
     var i = ss.insertSheet(CFG.TAB_ISSUES);
     i.appendRow(['When','File','Date','Description','Amount','Note']);
     i.setFrozenRows(1);
+  }
+  if (!getTab(ss, CFG.TAB_BALANCES)) {
+    var b = ss.insertSheet(CFG.TAB_BALANCES);
+    b.appendRow(['When','Account key','Account','Date','Closing balance','File']);
+    b.setFrozenRows(1);
   }
   var tx = getTab(ss, CFG.TAB_TX);
   if (tx && tx.getLastRow() === 0) {
@@ -329,27 +205,34 @@ function logParsed(label, got, show) {
 }
 
 
-/** Friday 6pm weekly run. */
-function installTrigger() {
+/**
+ * Install the two triggers, replacing any this script set before (including
+ * the old Friday-evening ingestInbox one). Run once; re-running is harmless.
+ */
+function installTriggers() {
+  var mine = ['ingestInbox', 'pollInbox', 'sendUploadReminder'];
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'ingestInbox') ScriptApp.deleteTrigger(t);
+    if (mine.indexOf(t.getHandlerFunction()) !== -1) ScriptApp.deleteTrigger(t);
   });
-  ScriptApp.newTrigger('ingestInbox')
-    .timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(18).create();
-  return 'Weekly trigger installed: Fridays around 6pm.';
+  ScriptApp.newTrigger('pollInbox').timeBased().everyMinutes(CFG.POLL_MINUTES).create();
+  ScriptApp.newTrigger('sendUploadReminder').timeBased()
+    .onWeekDay(ScriptApp.WeekDay[CFG.REMINDER.weekday]).atHour(CFG.REMINDER.hour).create();
+  setUpSheets();
+  return 'Installed: Inbox poll every ' + CFG.POLL_MINUTES + ' min, reminder ' + CFG.REMINDER.weekday + ' ~' + CFG.REMINDER.hour + ':00.';
 }
 
 
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Finance')
-    .addItem('Ingest new statements', 'ingestInbox')
+    .addItem('Process the Inbox now', 'processInboxNow')
+    .addItem('Check the Inbox (dry run, email only)', 'dryRunInbox')
     .addItem('Re-label unlabelled rows', 'relabelAll')
     .addItem('Re-label everything from Payees tab', 'relabelEverything')
     .addSeparator()
+    .addItem('Send the upload reminder now', 'sendUploadReminder')
     .addItem('Test parse one file (no writing)', 'testOneFile')
     .addItem('List tab names', 'listTabs')
-    .addItem('Reset and start over', 'resetIngest')
-    .addItem('Install weekly trigger', 'installTrigger')
+    .addItem('Install triggers', 'installTriggers')
     .addToUi();
 }

@@ -8,6 +8,9 @@
     "AppScripts/PdfText.gs",
     "AppScripts/Parser.gs",
     "AppScripts/Ledger.gs",
-    "AppScripts/Main.gs"
+    "AppScripts/Checks.gs",
+    "AppScripts/Main.gs",
+    "AppScripts/Pipeline.gs",
+    "AppScripts/Notify.gs"
   ]
 }

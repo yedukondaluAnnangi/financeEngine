@@ -373,6 +373,45 @@ function parseRbcRows(rows, period) {
   return out;
 }
 
+/* ========================================================================
+   Neo Mastercard - CSV download
+   Header: Transaction Date | Posted Date | Status | Description | Amount
+   Amounts are signed the way the sheet wants (purchases negative). Pending
+   rows are skipped: their amount and text can still change before posting,
+   and the next download picks them up once posted.
+   The transaction date is used, as the PDF parser does, and descriptions
+   squash to the same text as the PDF's, so a CSV row lands on the same
+   Transaction ID as the PDF row for the same purchase.
+   ======================================================================== */
+
+function parseNeoRows(rows, period) {
+  var col = { date: 0, status: 2, desc: 3, amt: 4 };
+  for (var h = 0; h < Math.min(rows.length, 5); h++) {
+    var hdr = rows[h].map(function (c) { return String(c || '').trim().toLowerCase(); });
+    if (hdr.indexOf('transaction date') === -1) continue;
+    col = { date: hdr.indexOf('transaction date'), status: hdr.indexOf('status'),
+            desc: hdr.indexOf('description'), amt: hdr.indexOf('amount') };
+    break;
+  }
+
+  var out = [];
+  rows.forEach(function (r) {
+    var m = String(r[col.date] || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return;                                   // header or blank line
+    if (col.status >= 0 && /pending/i.test(String(r[col.status] || ''))) return;
+    var amount = cellNum(r[col.amt]);
+    if (!amount) return;
+    out.push({
+      date: new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])),
+      desc: squash(r[col.desc]) || '(no description)',
+      amount: round2(amount),
+      balance: null,
+      warn: null
+    });
+  });
+  return out;
+}
+
 function parseTdRows(rows, period) {
   var out = [];
   rows.forEach(function (r) {

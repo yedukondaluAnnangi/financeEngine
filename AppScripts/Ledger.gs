@@ -384,3 +384,22 @@ function replacePdfRowsWithCsv() {
   Logger.log(msg);
   return msg;
 }
+
+
+/* ---------------------------------------------------------------------------
+   _Balances — the closing balance each file established, per account.
+   Columns: When | Account key | Account | Date | Closing balance | File
+   The latest date per account is what the next file must continue from (C6).
+   --------------------------------------------------------------------------- */
+
+function readBalances(ss) {
+  var sh = getTab(ss, CFG.TAB_BALANCES);
+  var out = {};
+  if (!sh || sh.getLastRow() < 2) return out;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 6).getValues().forEach(function (r) {
+    var key = String(r[1] || ''), d = isoCell(r[3]), bal = Number(r[4]);
+    if (!key || !d || isNaN(bal)) return;
+    if (!out[key] || d >= out[key].date) out[key] = { date: d, balance: round2(bal) };
+  });
+  return out;
+}

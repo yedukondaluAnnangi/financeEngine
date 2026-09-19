@@ -22,20 +22,32 @@ issues tab so a bad parse is visible rather than silent.
 | `.clasp.json` | binds the repo to the Apps Script project |
 | `.github/workflows/` | validate on PRs, deploy on `main` |
 
-## Entry points
+## How it runs
 
-Run these from the Apps Script editor, or let the Friday trigger do it.
+Upload statements to Drive › Bankstatements › **Inbox**. Every 5 minutes `pollInbox`
+checks it; once nothing new has landed for 2 minutes the upload is one batch:
+
+1. moved to **Outbox › Staging**, every file parsed and checked (`Checks.gs`):
+   account recognised, format allowed, rows valid, no future dates, the file's own
+   balance chain, continuity with the last recorded balance (`_Balances`), and no
+   clash with rows already in the sheet;
+2. all pass → one write, files to **Outbox › Processed**, summary email;
+   any fail → **nothing** written, files to **Outbox › Failed**, email with the reasons.
+
+An empty Inbox sends nothing. Fridays at 6 AM a reminder lists each bank's login
+link and the dates still missing from the sheet.
+
+## Entry points
 
 | Function | Does |
 |---|---|
-| `ingestInbox()` | read every new statement in the inbox folder |
-| `relabelAll()` | re-label past rows after adding patterns |
+| `installTriggers()` | once: the 5-minute poll + Friday reminder |
+| `processInboxNow()` | run the pipeline on the Inbox immediately |
+| `dryRunInbox()` | check the Inbox and email the result, writing and moving nothing |
+| `sendUploadReminder()` | send the reminder email now |
+| `relabelEverything()` | re-apply the Payees tab to every row |
 | `testOneFile()` | parse one file and log the result, writing nothing |
 | `listTabs()` | print every tab name, brackets included, to catch stray spaces |
-| `setUpSheets()` | create the housekeeping tabs |
-| `installTrigger()` | run `ingestInbox` every Friday evening |
-
-Set `CFG.DRY_RUN = true` in `Config.gs` to parse and report without writing.
 
 ## Deploying
 
