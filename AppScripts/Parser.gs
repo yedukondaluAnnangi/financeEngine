@@ -286,3 +286,31 @@ function parseHdfcSavingsRows(rows, period) {
 
   return out;
 }
+
+/* ========================================================================
+   TD chequing - CSV download ("accountactivity.csv")
+   Columns, no header:  Date (MM/DD/YYYY) | Description | Debit | Credit | Balance
+   Dates are month-first, so they are parsed here rather than by
+   parseDateText, which reads nn/nn/nnnn as day-first.
+   ======================================================================== */
+
+function parseTdRows(rows, period) {
+  var out = [];
+  rows.forEach(function (r) {
+    if (!r || r.length < 5) return;
+    var m = String(r[0] || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return;                                   // header or blank line
+    var debit = cellNum(r[2]), credit = cellNum(r[3]);
+    if (debit === null && credit === null) return;
+    var amount = round2((credit || 0) - (debit || 0));
+    if (!amount) return;
+    out.push({
+      date: new Date(Date.UTC(+m[3], +m[1] - 1, +m[2])),
+      desc: squash(r[1]) || '(no description)',
+      amount: amount,
+      balance: cellNum(r[4]),
+      warn: null
+    });
+  });
+  return out;
+}

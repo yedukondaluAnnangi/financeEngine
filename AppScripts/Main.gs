@@ -82,7 +82,7 @@ function ingestInbox() {
       if (isRowFile(file)) {
         rows = fileToRows(file);
         if (!rows || !rows.length) throw new Error('The spreadsheet came back empty.');
-        text = rowsToText(rows);
+        text = name + '\n' + rowsToText(rows);
         acct = detectAccount(text);
         if (!acct) throw new Error('Could not tell which account this is. Add a fingerprint to CFG.ACCOUNTS.');
         if (!acct.rowParser) {
@@ -236,7 +236,7 @@ function testOneFile() {
 
   if (isRowFile(file)) {
     rows = fileToRows(file);
-    text = rowsToText(rows);
+    text = file.getName() + '\n' + rowsToText(rows);
     Logger.log('File: ' + file.getName() + '  (spreadsheet, ' + rows.length + ' rows)');
   } else {
     text = pdfToText(file.getId());
