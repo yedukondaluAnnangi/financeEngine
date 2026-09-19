@@ -211,12 +211,19 @@ function buildRows(records, account, payees, existing, issues, sourceName) {
 
 
 /**
- * Flag equal-and-opposite pairs on the same account within a few days —
- * a cancelled transfer, a refunded purchase. They net to nothing but both
- * legs are real statement lines, so they stay in the ledger and get marked
- * rather than deleted.
+ * Flag equal-and-opposite pairs on the same account within a week — a
+ * cancelled transfer, a refunded purchase. They net to nothing but both legs
+ * are real statement lines, so they stay in the ledger and get marked rather
+ * than deleted.
  *
- * This is the thing that made the RBC rent look like it was paid twice.
+ * Same amount alone is not enough: a friend repaying 1,600 is not the rent
+ * of 1,600 coming back. A pair needs one leg categorised Reversal, or both
+ * legs on the same payee. Each row pairs at most once, preferring the partner
+ * whose description shares the most words (an e-Transfer's reference code),
+ * then the nearest date.
+ *
+ * Recomputed from scratch each run: a "Reversal pair" that no longer
+ * qualifies is cleared. Any other status is left alone.
  */
 function flagReversals(sh) {
   var last = sh.getLastRow();
@@ -224,34 +231,54 @@ function flagReversals(sh) {
 
   var n = last - 1;
   var vals = sh.getRange(2, 1, n, CFG.COLS.length).getValues();
+  var before = vals.map(function (r) { return String(r[11] || ''); });
+
   var byKey = {};
   vals.forEach(function (r, i) {
+    if (String(r[11] || '') === 'Reversal pair') r[11] = '';
     var amt = Number(r[6]);
     if (!amt) return;
-    // Rows that already carry a status (e.g. 'Internal FX') are not candidates:
+    // Rows that carry another status (e.g. 'Internal FX') are not candidates:
     // a CAD->USD conversion followed by a USD purchase is not a reversal.
-    var st = String(r[11] || '');
-    if (st && st.indexOf('Reversal') === -1) return;
+    if (r[11]) return;
     var k = r[3] + '|' + r[7] + '|' + Math.abs(amt).toFixed(2);
-    (byKey[k] = byKey[k] || []).push({ i: i, amt: amt, d: new Date(r[1]), status: String(r[11] || '') });
+    (byKey[k] = byKey[k] || []).push({
+      i: i, amt: amt, d: new Date(r[1]), payee: String(r[5] || ''), cat: String(r[9] || ''),
+      words: String(r[4] || '').toUpperCase().split(/[^A-Z0-9]+/).filter(function (w) { return w.length >= 4; })
+    });
   });
 
-  var marked = 0;
+  var cands = [];
   Object.keys(byKey).forEach(function (k) {
     var g = byKey[k];
-    if (g.length < 2) return;
     for (var a = 0; a < g.length; a++) {
       for (var b = a + 1; b < g.length; b++) {
-        if (g[a].amt * g[b].amt >= 0) continue;                       // same direction
-        var days = Math.abs(g[a].d - g[b].d) / 86400000;
+        var x = g[a], y = g[b];
+        if (x.amt * y.amt >= 0) continue;                              // same direction
+        var days = Math.abs(x.d - y.d) / 86400000;
         if (days > 7) continue;
-        if (g[a].status.indexOf('Reversal') === -1) { vals[g[a].i][11] = 'Reversal pair'; marked++; }
-        if (g[b].status.indexOf('Reversal') === -1) { vals[g[b].i][11] = 'Reversal pair'; marked++; }
+        var samePayee = x.payee && x.payee === y.payee && x.payee !== 'Needs labelling';
+        if (x.cat !== 'Reversal' && y.cat !== 'Reversal' && !samePayee) continue;
+        var shared = x.words.filter(function (w) { return y.words.indexOf(w) !== -1; }).length;
+        cands.push({ x: x.i, y: y.i, shared: shared, days: days });
       }
     }
   });
+  cands.sort(function (p, q) { return (q.shared - p.shared) || (p.days - q.days); });
 
-  if (marked) sh.getRange(2, 12, n, 1).setValues(vals.map(function (r) { return [r[11]]; }));
+  var used = {};
+  cands.forEach(function (c) {
+    if (used[c.x] || used[c.y]) return;
+    used[c.x] = used[c.y] = true;
+    vals[c.x][11] = vals[c.y][11] = 'Reversal pair';
+  });
+
+  var changed = 0, marked = 0;
+  vals.forEach(function (r, i) {
+    if (r[11] !== before[i]) changed++;
+    if (r[11] === 'Reversal pair' && before[i] !== 'Reversal pair') marked++;
+  });
+  if (changed) sh.getRange(2, 12, n, 1).setValues(vals.map(function (r) { return [r[11]]; }));
   return marked;
 }
 

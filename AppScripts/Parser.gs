@@ -176,6 +176,8 @@ function parseNeo(text, period) {
    Verified: 12 rows, purchases -8,798.68, credits +12,509.00 — both exact.
    =========================================================================== */
 
+var HDFC_CARD_TAIL = /\s*(?:●|Eligible\s+for\s+EMI|CONVERT\s+TO\s+EMI|Rewards\s+Program|GST\s+Summary|Points\s+Summary)/i;
+
 function parseHdfcCard(text, period) {
   var prepared = resplitOnDates(flatten(text), '\\d{2}/\\d{2}/\\d{4}');
   var lines = toLines(prepared);
@@ -186,8 +188,8 @@ function parseHdfcCard(text, period) {
   function clean(s) {
     return squash(String(s)
       .replace(/\s*[A-Za-z\u20b9\u20a8]\s*$/, '')
-      .replace(/[+-]\s*\d+\s*$/, '')
       .replace(/\+\s*$/, '')
+      .replace(/[+-]\s*\d+\s*$/, '')
       .replace(/\(Ref#\s*$/i, ''));
   }
 
@@ -198,7 +200,10 @@ function parseHdfcCard(text, period) {
     var m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})\s*\|?\s*\d{0,2}:?\d{0,2}\s*(.*)$/);
     if (!m) { carry.push(s); return; }
 
-    var rest = m[4], amts = trailingAmounts(rest);
+    // The last row before the summary block runs straight into it
+    // ("… + C 1,539.00 ● Eligible for EMI … GST C93.05"), and the summary's
+    // figures would be read as the amount. Cut the line at the first marker.
+    var rest = m[4].split(HDFC_CARD_TAIL)[0], amts = trailingAmounts(rest);
     if (!amts.length) { carry.push(s); return; }
 
     var last = amts[amts.length - 1];
