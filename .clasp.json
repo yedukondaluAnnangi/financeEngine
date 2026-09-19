@@ -1,0 +1,13 @@
+{
+  "scriptId": "1jM9c2w_cCdCMTPfKakHOEkM2vB0SE17QAsNVHITAIVP9tCrceRamhLcd",
+  "rootDir": "AppScripts",
+  "fileExtension": "gs",
+  "filePushOrder": [
+    "AppScripts/appsscript.json",
+    "AppScripts/Config.gs",
+    "AppScripts/PdfText.gs",
+    "AppScripts/Parser.gs",
+    "AppScripts/Lender.gs",
+    "AppScripts/Main.gs"
+  ]
+}

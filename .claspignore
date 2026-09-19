@@ -1,0 +1,10 @@
+# Everything outside AppScripts/ is repo scaffolding, not Apps Script source.
+**/**
+!appsscript.json
+!*.gs
+
+# Never ship these, even if they land in AppScripts/ by accident.
+.clasprc.json
+**/.clasprc.json
+*.md
+*.test.gs

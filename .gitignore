@@ -1,0 +1,15 @@
+# clasp credentials — never commit these, they are a live Google token
+.clasprc.json
+.clasp.json.local
+
+# one-time setup scaffolding, not part of the project
+APPLY.md
+*.patch
+
+node_modules/
+npm-debug.log*
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

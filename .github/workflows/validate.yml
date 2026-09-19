@@ -1,0 +1,70 @@
+name: Validate
+
+# Cheap gate so a syntax error never reaches the Apps Script project.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Syntax + manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Parse every .gs file
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in AppScripts/*.gs; do
+            cp "$f" "/tmp/$(basename "$f" .gs).js"
+            if node --check "/tmp/$(basename "$f" .gs).js"; then
+              echo "ok   $f"
+            else
+              echo "::error file=$f::Syntax error"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Validate JSON
+        run: |
+          set -euo pipefail
+          for f in AppScripts/appsscript.json .clasp.json; do
+            node -e "JSON.parse(require('fs').readFileSync('$f','utf8'))" && echo "ok   $f"
+          done
+
+      - name: Manifest sanity
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const m = require('./AppScripts/appsscript.json');
+          const problems = [];
+          if (m.runtimeVersion !== 'V8') problems.push('runtimeVersion should be V8');
+          if (!m.timeZone) problems.push('timeZone is missing');
+          if (!Array.isArray(m.oauthScopes) || !m.oauthScopes.length) problems.push('oauthScopes is empty');
+          const drive = (m.dependencies?.enabledAdvancedServices ?? [])
+            .find(s => s.userSymbol === 'Drive');
+          if (!drive) problems.push('the Drive advanced service must stay enabled — PdfText.gs calls Drive.Files directly');
+          if (problems.length) { problems.forEach(p => console.log(`::error::${p}`)); process.exit(1); }
+          console.log('manifest ok');
+          JS
+
+      - name: Config IDs are still filled in
+        run: |
+          set -euo pipefail
+          grep -q "SHEET_ID *: *'1" AppScripts/Config.gs || { echo "::error file=AppScripts/Config.gs::SHEET_ID looks empty"; exit 1; }
+          grep -q "INBOX_ID *: *'1" AppScripts/Config.gs || { echo "::error file=AppScripts/Config.gs::INBOX_ID looks empty"; exit 1; }
+          echo "ok   Config.gs"

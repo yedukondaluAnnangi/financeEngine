@@ -1,0 +1,151 @@
+name: Deploy to Apps Script
+
+# Pushes AppScripts/ into the Apps Script project, cuts an immutable version,
+# then points the deployment at that version.
+#
+# One-time setup lives in docs/DEPLOYMENT.md. In short:
+#   secret  CLASPRC_JSON                  <- contents of ~/.clasprc.json after `clasp login`
+#   var     APPS_SCRIPT_DEPLOYMENT_ID     <- optional; set it after the first run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'AppScripts/**'
+      - '.clasp.json'
+      - '.claspignore'
+      - '.github/workflows/deploy-apps-script.yml'
+  workflow_dispatch:
+    inputs:
+      description:
+        description: 'Version / deployment description'
+        required: false
+        default: 'Manual deploy'
+      push_only:
+        description: 'Push code only, skip version + deployment'
+        type: boolean
+        required: false
+        default: false
+
+# Two deploys at once would race for the same version number.
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CLASP_VERSION: '3.4.1'
+
+jobs:
+  deploy:
+    name: clasp push + deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install clasp
+        run: npm install -g "@google/clasp@${CLASP_VERSION}"
+
+      - name: Restore clasp credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLASPRC_JSON:-}" ]; then
+            echo "::error title=Missing credentials::The CLASPRC_JSON secret is not set. See docs/DEPLOYMENT.md."
+            exit 1
+          fi
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
+          if ! node -e 'JSON.parse(require("fs").readFileSync(process.env.HOME + "/.clasprc.json", "utf8"))'; then
+            echo "::error title=Bad credentials::CLASPRC_JSON is not valid JSON. Paste the whole file, including the outer braces."
+            exit 1
+          fi
+
+      - name: Confirm who we are authenticated as
+        run: clasp show-authorized-user
+
+      - name: List the files clasp will push
+        run: clasp status
+
+      - name: Push code
+        run: clasp push --force
+
+      - name: Create a version
+        id: version
+        if: ${{ github.event.inputs.push_only != 'true' }}
+        run: |
+          set -euo pipefail
+
+          DESC="${{ github.event.inputs.description }}"
+          if [ -z "$DESC" ]; then
+            SUBJECT="$(git log -1 --pretty=%s)"
+            DESC="${GITHUB_SHA:0:7} ${SUBJECT}"
+          fi
+          # The Apps Script API rejects descriptions past ~255 chars.
+          DESC="$(printf '%.200s' "$DESC")"
+          echo "description=$DESC" >> "$GITHUB_OUTPUT"
+
+          clasp create-version "$DESC" | tee create-version.log
+
+          # "Created version 12." -> 12. Anchored on the word so a digit in the
+          # commit subject cannot be mistaken for the version number.
+          VERSION="$(sed -nE 's/.*[Vv]ersion[[:space:]]+([0-9]+).*/\1/p' create-version.log | tail -1 || true)"
+          if [ -z "$VERSION" ]; then
+            VERSION="$(clasp list-versions | grep -oE '^[[:space:]]*[0-9]+' | tr -d '[:space:]' | sort -n | tail -1 || true)"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error title=No version::Could not determine the version number clasp just created."
+            exit 1
+          fi
+
+          echo "Created version $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update the deployment
+        if: ${{ github.event.inputs.push_only != 'true' }}
+        env:
+          DEPLOYMENT_ID: ${{ vars.APPS_SCRIPT_DEPLOYMENT_ID }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DESC: ${{ steps.version.outputs.description }}
+        run: |
+          set -euo pipefail
+          if [ -n "${DEPLOYMENT_ID:-}" ]; then
+            echo "Redeploying $DEPLOYMENT_ID at version $VERSION"
+            clasp update-deployment "$DEPLOYMENT_ID" --versionNumber "$VERSION" --description "$DESC"
+          else
+            echo "No APPS_SCRIPT_DEPLOYMENT_ID variable set — creating a deployment."
+            clasp create-deployment --versionNumber "$VERSION" --description "$DESC"
+            echo "::notice title=Save the deployment ID::Copy the ID above into the repo variable APPS_SCRIPT_DEPLOYMENT_ID so future runs update this deployment instead of making a new one."
+          fi
+
+      - name: Deployments now live
+        if: ${{ always() && github.event.inputs.push_only != 'true' }}
+        run: clasp list-deployments || true
+
+      - name: Summary
+        if: ${{ always() }}
+        run: |
+          {
+            echo "### Apps Script deploy"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Script | [1jM9c2w…RamhLcd](https://script.google.com/d/1jM9c2w_cCdCMTPfKakHOEkM2vB0SE17QAsNVHITAIVP9tCrceRamhLcd/edit) |"
+            echo "| Commit | \`${GITHUB_SHA:0:7}\` |"
+            echo "| Version | ${{ steps.version.outputs.version || '— (push only)' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Shred credentials
+        if: ${{ always() }}
+        run: rm -f "$HOME/.clasprc.json"
