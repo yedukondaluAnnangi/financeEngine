@@ -215,6 +215,7 @@ function commitBatch(result) {
   rows.sort(function (a, b) { return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0; });
 
   var start = tx.getLastRow() + 1, written = false;
+  idColumnAsText(tx);
   try {
     if (rows.length) { tx.getRange(start, 1, rows.length, CFG.COLS.length).setValues(rows); written = true; }
     if (balRows.length) appendRows(getTab(ss, CFG.TAB_BALANCES), balRows);

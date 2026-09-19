@@ -150,10 +150,27 @@ function existingIdSet(sh) {
   if (last < 2) return set;
   var ids = sh.getRange(2, 1, last - 1, 1).getValues();
   for (var i = 0; i < ids.length; i++) {
-    var v = String(ids[i][0] || '').trim();
+    var v = normId(ids[i][0]);
     if (v) set[v] = true;
   }
   return set;
+}
+
+/**
+ * A Transaction ID cell as the 12-hex-character string it was written as.
+ * An ID made only of digits ("078549700023") is turned into a number by
+ * Sheets unless the column is formatted as text, losing the leading zero —
+ * and the next import then fails to recognise the row and writes it again.
+ * The column is kept as text (idColumnAsText); this repairs older cells.
+ */
+function normId(v) {
+  if (typeof v === 'number') return ('000000000000' + String(v)).slice(-12);
+  return String(v || '').trim();
+}
+
+/** Keep the Transaction ID column as plain text so IDs are never read as numbers. */
+function idColumnAsText(sh) {
+  sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');
 }
 
 

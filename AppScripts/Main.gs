@@ -151,6 +151,7 @@ function setUpSheets() {
     tx.appendRow(CFG.COLS);
     tx.setFrozenRows(1);
   }
+  if (tx) idColumnAsText(tx);
 }
 
 

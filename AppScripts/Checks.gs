@@ -21,7 +21,7 @@
 function sheetSnapshot(values) {
   var snap = { ids: {}, byAcct: {}, lastDate: {} };
   values.forEach(function (r) {
-    var id = String(r[0] || '').trim();
+    var id = normId(r[0]);
     if (!id) return;
     var d = isoCell(r[1]);
     var acct = String(r[3] || '');
