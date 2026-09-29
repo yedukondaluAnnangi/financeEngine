@@ -49,8 +49,10 @@ var PLAN = {
     [/^(creditcard|transfer|transfer to india|owner draw|reversal)$/i, 'Moved between your accounts'],
     [/^investment/i,                                                     'Saved / invested'],
     [/^construction/i,                                                   'House construction'],
-    [/^loan to /i,                                                       'Lent out'],
-    [/^(business income|salary|income|government benefit|tax refund|interest|rewards|loan repayment to me|transfer in)$/i, 'Income'],
+    // Money lent and money paid back net off in one group, so a friend
+    // repaying you does not look like income.
+    [/^(loan to |loan repayment to me)/i,                                'Lent out'],
+    [/^(business income|salary|income|government benefit|tax refund|interest|rewards|transfer in)$/i, 'Income'],
     [/^(rent|loan|utilities|phone|insurance)$/i,                         'Bills & loans'],
     [/^(groceries|fuel|transit|medical|household)$/i,                    'Essentials'],
     [/^subscription/i,                                                   'Subscriptions'],
@@ -68,7 +70,8 @@ var PLAN = {
   WASTE_GROUPS: ['Lifestyle', 'Subscriptions', 'Fees & charges'],
 
   MONTHS_SHOWN   : 4,     // columns in "Where your money goes" (current month included)
-  HABIT_MIN      : 5,     // purchases at one place in 30 days before it counts as a habit
+  STALE_DAYS     : 14,    // an account this many days behind gets the upload banner
+  HABIT_MIN      : 5,    // purchases at one place in 30 days before it counts as a habit
   PRICE_UP       : 0.05,  // a bill paid 5% above its listed amount is flagged
   REVIEW_BY_DAY  : 7      // monthly review goes out on the first poll of days 1..7
 };
@@ -108,6 +111,10 @@ var PLAN_SEED = [
  * missed. Appended once to an existing Commitments tab (rows whose Name is
  * already there are skipped), then never again — deleting one is permanent.
  */
+var PLAN_ADD_V3 = [
+  ['JioFiber (India)', '*', 706.82, 'INR', 'Monthly', 20, 'HDFC Savings', 'Phone', '', '', '', 'From Month Ahead. Paid by UPI — matched on the amount. Still needed alongside Jio?']
+];
+
 var PLAN_ADD_V2 = [
   ['Rent — India',               '*',     9000,  'INR', 'Monthly', 17,           'HDFC Savings', 'Rent',         'Keep', '', '', 'Paid by PhonePe to the landlord — the bank line has no name, so it is matched on the amount (₹9,000). July was paid ~24th; August is not in the HDFC statement — check PhonePe.'],
   ['belairdirect car insurance', 'BELAIR', 218,  'CAD', 'Monthly', 7,            '',             'Insurance',    '',     '', '', 'From Notion Payments. Not seen in any statement yet — which account pays it? Put that in Account.'],
@@ -488,7 +495,7 @@ function planAnalyse(txValues, commitValues, opts) {
   W.undecided = commits.filter(function (c) { return !c.income && (!c.decision || /^review$/i.test(c.decision)); })
     .map(function (c) {
       var oneOff = /^one-off$/i.test(c.freq);
-      return { name: c.name, row: c.row, monthly: oneOff ? '' : planMonthly(c), yearly: oneOff ? c.cad : pR(planMonthly(c) * 12),
+      return { name: c.name, row: c.row, monthly: oneOff ? 'one-off' : planMonthly(c), yearly: oneOff ? c.cad : pR(planMonthly(c) * 12),
                lastPaid: c.lastPaid ? c.lastPaid.date : '', notes: (oneOff ? 'One-off. ' : '') + c.notes };
     })
     .sort(function (a, b) { return b.yearly - a.yearly; });
@@ -633,7 +640,11 @@ function refreshDashboard(ss, quick) {
   var txVals = tx && tx.getLastRow() > 1 ? tx.getRange(2, 1, tx.getLastRow() - 1, CFG.COLS.length).getValues() : [];
   var today = Utilities.formatDate(new Date(), CFG_TZ(), 'yyyy-MM-dd');
 
-  if (!quick) planAddOnce(commitSh, 'plan_seed_v2', PLAN_ADD_V2);
+  if (!quick) {
+    planAddOnce(commitSh, 'plan_seed_v2', PLAN_ADD_V2);
+    planAddOnce(commitSh, 'plan_seed_v3', PLAN_ADD_V3);
+    planTidyTabs(ss);
+  }
   var cv = planCommitValues(commitSh);
   var M = planAnalyse(txVals, cv, { today: today, fx: CFG.FX_TO_CAD });
 
@@ -648,6 +659,32 @@ function refreshDashboard(ss, quick) {
 
   planRender(ss, M);
   return M;
+}
+
+/**
+ * Once: put the tabs you use first and hide the ones you never need to open.
+ * Hidden tabs keep working (the script still writes _Runs, _Issues,
+ * _Balances); right-click any tab bar › Show to see them again. Month Ahead
+ * and Summary are superseded by the Dashboard; Sheet4 is hidden only if empty.
+ */
+function planTidyTabs(ss) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('plan_tidy_v1')) return;
+  var order = [PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, CFG.TAB_PAYEES];
+  order.forEach(function (name, i) {
+    var sh = getTab(ss, name);
+    if (!sh) return;
+    ss.setActiveSheet(sh);
+    ss.moveActiveSheet(i + 1);
+  });
+  ['Month Ahead', 'Summary', CFG.TAB_RUNS, CFG.TAB_ISSUES, CFG.TAB_BALANCES, 'Sheet4'].forEach(function (name) {
+    var sh = getTab(ss, name);
+    if (!sh || sh.isSheetHidden()) return;
+    if (name === 'Sheet4' && sh.getLastRow() > 0) return;
+    sh.hideSheet();
+  });
+  ss.setActiveSheet(getTab(ss, PLAN.TAB_DASH));
+  props.setProperty('plan_tidy_v1', new Date().toISOString());
 }
 
 /** Append rows to Commitments once per key, skipping names already on the tab. */
@@ -673,7 +710,7 @@ function planCommitmentsTab(ss) {
   sh = ss.insertSheet(PLAN.TAB_COMMIT);
   sh.getRange(1, 1, 1, PLAN.COMMIT_COLS.length).setValues([PLAN.COMMIT_COLS])
     .setFontWeight('bold').setBackground('#f1f3f4');
-  var seed = PLAN_SEED.concat(PLAN_ADD_V2);
+  var seed = PLAN_SEED.concat(PLAN_ADD_V2, PLAN_ADD_V3);
   sh.getRange(2, 1, seed.length, PLAN.COMMIT_COLS.length).setValues(seed);
   sh.setFrozenRows(1);
   sh.getRange('B:B').setNumberFormat('@');
@@ -724,9 +761,20 @@ function planRender(ss, M) {
   row(['Rebuilt ' + ts + ' · statements up to ' + (M.dataThrough || '—') +
        ' · updates itself after every upload and every morning. Don\'t edit this tab — decide things on the Commitments tab.'], 'note');
 
+  // ---- what to upload: stale statements hide everything below ---------------
+  var stale = M.accounts.filter(function (a) { return a.behind > PLAN.STALE_DAYS; });
+  if (stale.length) {
+    gap();
+    var nb = row(['⚠ Upload statements to see the real picture: ' + stale.map(function (a) {
+      var blind = M.dues.filter(function (d) { return d.state === 'unseen' && d.acct && planAcctMatches(d.acct, a.name); }).length;
+      return a.name + ' (' + a.behind + ' days' + (blind ? ', ' + blind + ' payments unconfirmed' : '') + ')';
+    }).join(' · ')], 'bold');
+    fmt.amber.push('A' + nb + ':H' + nb);
+  }
+
   // ---- at a glance -------------------------------------------------------
   title('At a glance (CAD)');
-  row(['', 'Money in', 'Living costs', 'House construction', 'Lent / saved', 'Net'], 'head');
+  row(['', 'Money in', 'Living costs', 'House construction', 'Lent (net) / saved', 'Net'], 'head');
   function flowRow(label, f) { var n = row([label, f.inn, f.living, f.house, f.other, f.net]); money(n, [2, 3, 4, 5, 6]); if (f.net < 0) fmt.red.push('F' + n); }
   flowRow(pMonthName(M.thisMonth) + ' so far', M.flowThis);
   if (M.flowLast) flowRow(pMonthName(M.lastMonth), M.flowLast);
@@ -755,22 +803,43 @@ function planRender(ss, M) {
   });
 
   // ---- still to pay --------------------------------------------------------
-  title('🧾 Still to pay — overdue, this month and the next 5 weeks');
+  title('🧾 Still to pay — needs you now, then the next 14 days');
   row(['Due', 'What', 'Amount (CAD)', 'Amount', 'Status', 'Account', 'Note'], 'head');
   var monthStart = M.thisMonth + '-01';
   var prevStart = pMonthAdd(M.thisMonth, -1) + '-01';
-  var open = M.dues.filter(function (d) {
-    return d.state !== 'paid' && d.decision !== 'Cancel' &&
-           (d.state === 'nodate' || d.date >= monthStart || (d.date >= prevStart && (d.state === 'missed' || d.state === 'unseen')));
+  var live = M.dues.filter(function (d) { return d.state !== 'paid' && d.decision !== 'Cancel'; });
+  var now = live.filter(function (d) {
+    return d.state === 'nodate' || d.state === 'due' ||
+           (d.state === 'missed' && d.date >= prevStart) ||
+           (d.state === 'upcoming' && d.inDays <= 14);
   });
-  if (!open.length) row(['Nothing outstanding.']);
-  open.forEach(function (d) {
+  if (!now.length) row(['Nothing due in the next 14 days.']);
+  now.forEach(function (d) {
     var n = row([d.date, (d.income ? '⬇ ' : '') + d.name, d.cad, d.amount + ' ' + d.cur, planDueStatus(d), d.acct, d.notes]);
     money(n, [3], true);
     if (d.state === 'missed') fmt.red.push('A' + n + ':H' + n);
-    else if (d.state === 'unseen') fmt.grey.push('A' + n + ':H' + n);
-    else if (d.state === 'due' || d.inDays <= 7) fmt.amber.push('A' + n + ':H' + n);
+    else if (d.state === 'due' || d.state === 'nodate' || d.inDays <= 7) fmt.amber.push('A' + n + ':H' + n);
   });
+  // Payments the statements cannot confirm yet: one line per account, not one per bill.
+  var blind = {};
+  live.forEach(function (d) {
+    if (d.state !== 'unseen' || d.date < prevStart) return;
+    var k = d.acct || '(no account set)';
+    (blind[k] = blind[k] || { names: [], cad: 0, cov: d.coverage }).names.push(d.name + ' ' + d.date.slice(5));
+    blind[k].cad += d.cad;
+  });
+  Object.keys(blind).forEach(function (k) {
+    var b = blind[k];
+    var n = row(['❔ Can\'t confirm yet', k + (b.cov && k !== '(no account set)' ? ' — statements stop ' + b.cov : ''), pR(b.cad), '',
+                 b.names.length + ' payment(s): ' + b.names.join(', ')], 'grey');
+    money(n, [3], true);
+  });
+  var later = live.filter(function (d) { return d.state === 'upcoming' && d.inDays > 14 && !d.income; });
+  if (later.length) {
+    var nl = row(['Later', later.length + ' more bill(s) in 15–35 days', pR(later.reduce(function (s2, d) { return s2 + d.cad; }, 0)), '',
+                  later.map(function (d) { return d.name; }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ')], 'note');
+    money(nl, [3], true);
+  }
   if (M.cards.length) {
     gap();
     row(['Credit card', 'Spent since last payment', 'Last payment', 'Data up to'], 'head');
