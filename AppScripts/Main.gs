@@ -9,6 +9,7 @@
  *   dryRunInbox()        check the Inbox and email the result, writing nothing
  *   sendUploadReminder() send the reminder email now
  *   relabelEverything()  re-apply the Payees tab to every row (Ledger.gs)
+ *   refreshDashboard()   rebuild the Dashboard tab now (Plan.gs) — normally automatic
  *   testOneFile()        parse one Inbox file and log it, writing nothing
  *   listTabs()           show every tab name, brackets included, to spot stray spaces
  */
@@ -231,6 +232,7 @@ function onOpen() {
     .addItem('Re-label unlabelled rows', 'relabelAll')
     .addItem('Re-label everything from Payees tab', 'relabelEverything')
     .addSeparator()
+    .addItem('Refresh dashboard', 'refreshDashboard')
     .addItem('Send the upload reminder now', 'sendUploadReminder')
     .addItem('Test parse one file (no writing)', 'testOneFile')
     .addItem('List tab names', 'listTabs')

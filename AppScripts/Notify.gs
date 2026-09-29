@@ -149,6 +149,14 @@ function sendUploadReminder() {
               '<td>' + need + '</td><td>' + (upToDate ? '' : button(bank.login, 'Log in')) + '</td></tr>');
   });
 
+  // What is due this week, from a freshly rebuilt dashboard (Plan.gs).
+  var digest = '';
+  try {
+    digest = planDigestHtml(refreshDashboard(ss));
+  } catch (err) {
+    planIssue('Due-this-week section of the reminder failed', err);
+  }
+
   var html = '<div style="font-family:Arial,sans-serif;font-size:14px;color:#202124">' +
     '<p>Download these, then drop them all into the Inbox in one go. The script checks and ingests them within ~5 minutes and emails you the result.</p>' +
     '<p>' + button(inboxUrl(), 'Open the Inbox folder') + '</p>' +
@@ -156,7 +164,7 @@ function sendUploadReminder() {
     '<tr style="background:#f1f3f4"><th align="left">Account</th><th align="left">Dates to download</th><th></th></tr>' +
     rows.join('\n') + '</table>' +
     '<p style="font-size:12px;color:#5f6368">Dates come from the last transaction already in the sheet for each account. ' +
-    'Overlapping a few days is fine — rows already there are skipped.</p></div>';
+    'Overlapping a few days is fine — rows already there are skipped.</p>' + digest + '</div>';
 
   MailApp.sendEmail({
     to: notifyAddress(),

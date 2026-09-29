@@ -11,6 +11,7 @@
     "AppScripts/Checks.gs",
     "AppScripts/Main.gs",
     "AppScripts/Pipeline.gs",
-    "AppScripts/Notify.gs"
+    "AppScripts/Notify.gs",
+    "AppScripts/Plan.gs"
   ]
 }

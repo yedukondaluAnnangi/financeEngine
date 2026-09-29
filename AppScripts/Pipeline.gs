@@ -31,6 +31,14 @@ function pollInbox() {
       sendUploadReminder();
     }
 
+    // Once a day: rebuild the dashboard (due dates move with the calendar),
+    // and early in the month send last month's review. See Plan.gs.
+    try {
+      planDaily();
+    } catch (err) {
+      planIssue('Daily dashboard refresh failed', err);
+    }
+
     var staging = subfolder(DriveApp.getFolderById(CFG.OUTBOX_ID), CFG.STAGING_NAME);
 
     // A batch left in Staging by a transient error goes first.
@@ -131,6 +139,14 @@ function runBatch(batchFolder) {
     // The batch itself is done either way; make the missing email visible.
     appendRows(getTab(SpreadsheetApp.openById(CFG.SHEET_ID), CFG.TAB_ISSUES),
                [[new Date(), result.batch, '', 'Result email not sent', '', err.message]]);
+  }
+  // New rows change every number on the dashboard.
+  if (result.ok && result.added) {
+    try {
+      refreshDashboard();
+    } catch (err) {
+      planIssue('Dashboard refresh after upload failed', err);
+    }
   }
   Logger.log(batchText(result));
   return batchText(result);

@@ -18,6 +18,7 @@ issues tab so a bad parse is visible rather than silent.
 | `AppScripts/Parser.gs` | statement parsers |
 | `AppScripts/PdfText.gs` | PDF and spreadsheet text extraction via Drive + Docs |
 | `AppScripts/Ledger.gs` | dedup IDs, payee and category labelling, reversal flags |
+| `AppScripts/Plan.gs` | Phase 2: the Dashboard and Commitments tabs — where money goes, what is still to pay, where it is wasted |
 | `AppScripts/appsscript.json` | manifest: runtime, time zone, scopes, Drive service |
 | `.clasp.json` | binds the repo to the Apps Script project |
 | `.github/workflows/` | validate on PRs, deploy on `main` |
@@ -37,6 +38,22 @@ checks it; once nothing new has landed for 2 minutes the upload is one batch:
 An empty Inbox sends nothing. Fridays at 6 AM a reminder lists each bank's login
 link and the dates still missing from the sheet.
 
+## Dashboard (Phase 2)
+
+Two tabs, both kept up to date without anything to run:
+
+- **Dashboard** — rebuilt after every upload, on the first poll of each day, and
+  whenever the Commitments tab is edited. At a glance, this month's plan, what is
+  still to pay (paid / due / missed / can't tell yet), where money is being wasted
+  (undecided recurring costs, cancelled-but-still-charging, price rises, fees,
+  habits, lifestyle), where the money goes by group and category, and data health.
+- **Commitments** — every bill, loan, subscription, fee and income that recurs.
+  Seeded on first run; new recurring charges are appended automatically. The only
+  thing to do by hand is set **Decision** to Keep or Cancel.
+
+The Friday reminder carries a "due this week" section, and a review of the month
+just ended is emailed in the first days of each month.
+
 ## Entry points
 
 | Function | Does |
@@ -46,6 +63,7 @@ link and the dates still missing from the sheet.
 | `dryRunInbox()` | check the Inbox and email the result, writing and moving nothing |
 | `sendUploadReminder()` | send the reminder email now |
 | `relabelEverything()` | re-apply the Payees tab to every row |
+| `refreshDashboard()` | rebuild the Dashboard now (normally automatic) |
 | `testOneFile()` | parse one file and log the result, writing nothing |
 | `listTabs()` | print every tab name, brackets included, to catch stray spaces |
 
