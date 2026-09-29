@@ -305,8 +305,10 @@ function fxDashboardCells() {
   });
   var und = '(COUNTIFS(' + CM + 'W2:W,"Out",' + CM + 'I2:I,"")+COUNTIFS(' + CM + 'W2:W,"Out",' + CM + 'I2:I,"Review"))';
   var undYr = '(SUMIFS(' + CM + 'O2:O,' + CM + 'W2:W,"Out",' + CM + 'I2:I,"")+SUMIFS(' + CM + 'O2:O,' + CM + 'W2:W,"Out",' + CM + 'I2:I,"Review"))';
+  var rec = CM + 'W2:W,"Out",' + CM + 'E2:E,"<>One-off"';
+  var undRec = '(COUNTIFS(' + rec + ',' + CM + 'I2:I,"")+COUNTIFS(' + rec + ',' + CM + 'I2:I,"Review"))';
   put(9, 1, 'Phase 2 progress', 'bold');
-  put(9, 2, '=(COUNTIFS(' + CM + 'W2:W,"Out")-' + und + ')&" of "&COUNTIFS(' + CM + 'W2:W,"Out")&" recurring costs decided"', 'bold');
+  put(9, 2, '=(COUNTIFS(' + rec + ')-' + undRec + ')&" of "&COUNTIFS(' + rec + ')&" recurring costs decided"', 'bold');
   put(9, 4, '=IF(' + und + '=0,"All decided ✅",' + und + '&" waiting for Keep/Cancel ("&TEXT(' + undYr + ',"$#,##0")&"/yr)")', 'bold');
 
   // This month's plan
@@ -376,7 +378,7 @@ function fxDashboardCells() {
 
   // Where you're wasting money
   title(77, '🔥 Where you\'re wasting money');
-  head(78, ['1. Recurring costs waiting for Keep / Cancel', 'Per month', 'Per year', 'Last paid', 'Note']);
+  head(78, ['1. Costs waiting for your Keep / Cancel', 'Per month', 'Per year (one-offs: once)', 'Last paid', 'Note']);
   put(79, 1, '=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({' + CM + 'A2:A,' + CM + 'N2:N,' + CM + 'O2:O,' + CM + 'P2:P,' + CM + 'L2:L},' +
              CM + 'A2:A<>"",' + CM + 'W2:W="Out",(' + CM + 'I2:I="")+(' + CM + 'I2:I="Review")),3,FALSE),15,5),"Every recurring cost has a decision ✅")');
   styles.money2.push([79, 2, 15, 2]); styles.date.push([79, 4, 15, 1]);
