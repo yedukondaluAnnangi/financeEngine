@@ -872,7 +872,8 @@ function sendMonthlyReview(ss) {
   var groups = sh.getRange('A137:F152').getDisplayValues();          // by group, last four months
   var head = groups[0];
   var col = head.indexOf(Utilities.formatDate(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), CFG_TZ(), 'yyyy-MM'));
-  var rows = groups.slice(1).filter(function (r) { return r[0] && col > 0 && r[col]; })
+  // Where the money went: spending groups only (income is in the sentence, after HST).
+  var rows = groups.slice(1).filter(function (r) { return r[0] && r[0] !== 'Income' && col > 0 && r[col]; })
     .map(function (r) { return '<tr style="border-top:1px solid #e0e0e0"><td>' + esc(r[0]) + '</td><td align="right">' + esc(r[col]) + '</td></tr>'; });
   var plan = sh.getRange('A12:B19').getDisplayValues();
   var h = ['<div style="font-family:Arial,sans-serif;font-size:14px;color:#202124">',
