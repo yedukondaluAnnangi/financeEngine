@@ -226,6 +226,9 @@ function planRowFormulas(r) {
 /** Write headers, formulas and formats for Commitments M..Z on the given rows (all rows if none given). */
 function fxCommitFormulas(sh, rows) {
   var c0 = FX.COMMIT_CALC_COL, w = FX.COMMIT_CALC.length;
+  // A new formula column may reach past the tab's last column: grow it first.
+  var need = c0 + w - 1 - sh.getMaxColumns();
+  if (need > 0) sh.insertColumnsAfter(sh.getMaxColumns(), need);
   sh.getRange(1, c0, 1, w).setValues([FX.COMMIT_CALC]).setFontWeight('bold').setBackground('#e8f0fe');
   sh.getRange(1, c0).setNote('Columns M–Z are formulas — don\'t type here. They fill in for every row you add on the left.');
   sh.setFrozenColumns(1);
