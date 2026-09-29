@@ -31,6 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
+  VERSION    : '2026-09-29.3',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -972,8 +973,11 @@ function planRender(ss, M) {
 function planDaily() {
   var props = PropertiesService.getScriptProperties();
   var today = Utilities.formatDate(new Date(), CFG_TZ(), 'yyyy-MM-dd');
-  if (props.getProperty('plan_day_v2') === today) return;
-  props.setProperty('plan_day_v2', today);
+  // Keyed on the code version too, so a deploy that bumps PLAN.VERSION
+  // rebuilds on the next poll instead of the next morning.
+  var stamp = today + '|' + PLAN.VERSION;
+  if (props.getProperty('plan_day') === stamp) return;
+  props.setProperty('plan_day', stamp);
   var M = refreshDashboard();
   var month = today.slice(0, 7);
   if (+today.slice(8, 10) <= PLAN.REVIEW_BY_DAY && props.getProperty('plan_review') !== month) {
