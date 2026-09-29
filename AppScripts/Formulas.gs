@@ -278,7 +278,9 @@ function fxDashboardCells() {
   function head(r, list) { list.forEach(function (h, i) { put(r, i + 1, h, 'head'); }); }
 
   put(1, 1, '💰 Finance — where you stand', 'title');
-  put(2, 1, '=" Live · "&TEXT(NOW(),"yyyy-mm-dd HH:mm")&" · every number here is a formula over Transactions, Commitments and Categories. Decide things on Commitments; regroup categories on Categories."', 'note');
+  put(2, 1, '=" Live · "&TEXT(NOW(),"yyyy-mm-dd HH:mm")&" · every number here is a formula over Transactions, Commitments and Categories. Decide things on Commitments; regroup categories on Categories."' +
+            // A failed upkeep (formula write, category sync) would otherwise sit unseen in hidden _Issues.
+            '&IFERROR("   ⚠ Upkeep problem: "&INDEX(SORT(FILTER({_Issues!A2:A,_Issues!D2:D},_Issues!B2:B="Plan.gs",_Issues!A2:A>NOW()-2),1,FALSE),1,2)&" (see hidden _Issues tab)","")', 'note');
 
   // Upload banner: accounts whose statements are more than FX.STALE_DAYS behind.
   put(3, 1, '=IFERROR("⚠ Upload statements to see the real picture: "&TEXTJOIN(" · ",TRUE,' +
