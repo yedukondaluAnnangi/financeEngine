@@ -903,8 +903,8 @@ function planRender(ss, M) {
 function planDaily() {
   var props = PropertiesService.getScriptProperties();
   var today = Utilities.formatDate(new Date(), CFG_TZ(), 'yyyy-MM-dd');
-  if (props.getProperty('plan_day') === today) return;
-  props.setProperty('plan_day', today);
+  if (props.getProperty('plan_day_v2') === today) return;
+  props.setProperty('plan_day_v2', today);
   var M = refreshDashboard();
   var month = today.slice(0, 7);
   if (+today.slice(8, 10) <= PLAN.REVIEW_BY_DAY && props.getProperty('plan_review') !== month) {
