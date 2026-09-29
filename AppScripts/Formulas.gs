@@ -30,7 +30,7 @@ var FX = {
   COMMIT_CALC_COL: 13,
   COMMIT_CALC: ['CAD each', 'Per month (CAD)', 'Per year (CAD)', 'Last paid', 'Last amount',
                 'This cycle due', 'Next due', 'Status', 'Due this month (CAD)', 'Paid this month (CAD)',
-                'In / Out', 'Counts as', 'Still owed this month (CAD)', 'Days to next'],
+                'In / Out', 'Counts as', 'Still owed this month (CAD)', 'Days to next', 'Paid last month (CAD)'],
   STALE_DAYS: 14
 };
 
@@ -219,7 +219,8 @@ function planRowFormulas(r) {
   var X = '=' + blank + 'IFERROR(VLOOKUP($H' + r + ',Categories!$A:$C,3,0),"Living"))';
   var Y = '=' + blank + 'IF($I' + r + '="Cancel",0,MAX(0,$U' + r + '-$V' + r + ')))';
   var Z = '=IF(OR($A' + r + '="",$S' + r + '=""),"",$S' + r + '-TODAY())';
-  return [M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z];
+  var AA = '=IF($A' + r + '="",0,IFERROR(ARRAYFORMULA(SUM(FILTER(ABS(_Calc!$H$2:$H),' + ok + ',_Calc!$B$2:$B=TEXT(EDATE(TODAY(),-1),"yyyy-mm")))),0))';
+  return [M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA];
 }
 
 /** Write headers, formulas and formats for Commitments M..Z on the given rows (all rows if none given). */
@@ -228,7 +229,7 @@ function fxCommitFormulas(sh, rows) {
   sh.getRange(1, c0, 1, w).setValues([FX.COMMIT_CALC]).setFontWeight('bold').setBackground('#e8f0fe');
   sh.getRange(1, c0).setNote('Columns M–Z are formulas — don\'t type here. They fill in for every row you add on the left.');
   sh.setFrozenColumns(1);
-  [90, 100, 100, 95, 90, 100, 100, 300, 110, 110, 60, 80, 120, 80].forEach(function (px, i) { sh.setColumnWidth(c0 + i, px); });
+  [90, 100, 100, 95, 90, 100, 100, 300, 110, 110, 60, 80, 120, 80, 110].forEach(function (px, i) { sh.setColumnWidth(c0 + i, px); });
   var last = sh.getLastRow();
   if (last < 2) return;
   if (!rows) { rows = []; for (var r = 2; r <= last; r++) rows.push(r); }
@@ -241,6 +242,7 @@ function fxCommitFormulas(sh, rows) {
   sh.getRange(2, c0 + 8, n, 2).setNumberFormat('$#,##0.00');        // U V
   sh.getRange(2, c0 + 12, n, 1).setNumberFormat('$#,##0.00');       // Y
   sh.getRange(2, c0 + 13, n, 1).setNumberFormat('0');               // Z
+  sh.getRange(2, c0 + 14, n, 1).setNumberFormat('$#,##0.00');       // AA
 }
 
 
@@ -310,7 +312,7 @@ function fxDashboardCells() {
   var plan = [
     ['Expected in', '=' + sumC('U', CM + 'W2:W,"In"'), 'Income on Commitments due this month'],
     ['Committed bills & loans', '=-' + sumC('U', CM + 'W2:W,"Out",' + CM + 'I2:I,"<>Cancel",' + CM + 'X2:X,"<>House"'), 'Every Keep / undecided commitment due this month (house payments are below)'],
-    ['Everyday spending', '=-MAX(0,SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"Living")-' + sumC('N', CM + 'X2:X,"Living",' + CM + 'W2:W,"Out",' + CM + 'I2:I,"<>Cancel"') + ')', 'Last month\'s living costs minus the bills above'],
+    ['Everyday spending', '=-MAX(0,SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"Living")-' + sumC('AA', CM + 'X2:X,"Living",' + CM + 'W2:W,"Out"') + ')', 'Last month\'s living costs minus the bills actually paid last month'],
     ['Left over', '=B12+B13+B14', ''],
     ['House construction', '=-MAX(SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"House"),' + sumC('U', CM + 'X2:X,"House",' + CM + 'I2:I,"<>Cancel"') + ')',
      'Last month\'s pace, or the house payments due this month if larger — a project, not a living cost'],
