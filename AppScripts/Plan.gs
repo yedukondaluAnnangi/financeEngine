@@ -827,24 +827,33 @@ function planCommitRows(ss) {
   var w = PLAN.COMMIT_COLS.length + FX.COMMIT_CALC.length;
   return sh.getRange(2, 1, sh.getLastRow() - 1, w).getDisplayValues().map(function (r) {
     return { name: r[0], amount: r[2], cur: r[3], acct: r[6], decision: r[8], perYear: r[14],
-             next: r[18], status: r[19], kind: r[22], inDays: r[25] === '' ? null : Number(r[25]) };
+             cycle: r[17], next: r[18], status: r[19], kind: r[22], inDays: r[25] === '' ? null : Number(r[25]) };
   }).filter(function (c) { return c.name; });
 }
 
 /** "Due this week" block for the Friday reminder. */
 function planDigestHtml(ss) {
   var rows = planCommitRows(ss);
+  // Same wording as the Dashboard: what needs you is shown with the date it
+  // was due; anything else reads "in N days · last paid ...".
   var soon = rows.filter(function (c) {
     return c.decision !== 'Cancel' &&
            (/^(🔴|⏳|📌|⚠)/.test(c.status) || (c.inDays !== null && c.inDays <= 7 && !/^(Ended|✂)/.test(c.status)));
-  });
+  }).map(function (c) {
+    var attention = /^(🔴|⏳|📌|⚠)/.test(c.status);
+    var when = c.inDays === 0 ? 'today' : c.inDays === 1 ? 'tomorrow' : 'in ' + c.inDays + ' days';
+    var last = /^✅/.test(c.status) ? ' · last ' + c.status.replace(/^✅ (Paid|Received) /, function (m, w) { return w.toLowerCase() + ' '; })
+             : /^❔/.test(c.status) ? ' · last cycle unconfirmed' : '';
+    return { name: c.name, amount: c.amount, cur: c.cur, status: attention ? c.status : '🗓 ' + when + last,
+             date: attention ? (c.cycle || c.next || '') : c.next, attention: attention };
+  }).sort(function (a, b) { return (b.attention - a.attention) || (a.date < b.date ? -1 : a.date > b.date ? 1 : 0); });
   var h = ['<h3 style="margin:18px 0 6px">🧾 Money due this week</h3>'];
   if (!soon.length) h.push('<p>Nothing due in the next 7 days.</p>');
   else {
     h.push('<table cellpadding="6" style="border-collapse:collapse;font-size:13px">');
     soon.forEach(function (c) {
-      h.push('<tr style="border-top:1px solid #e0e0e0' + (/^(🔴|⚠)/.test(c.status) ? ';background:#fce8e6' : '') + '"><td>' +
-             esc(c.next || '') + '</td><td>' + esc(c.name) + '</td><td align="right">' + esc(c.amount + ' ' + c.cur) +
+      h.push('<tr style="border-top:1px solid #e0e0e0' + (/^(🔴|⚠)/.test(c.status) ? ';background:#fce8e6' : c.attention ? ';background:#fef7e0' : '') + '"><td>' +
+             esc(c.date || '') + '</td><td>' + esc(c.name) + '</td><td align="right">' + esc(c.amount + ' ' + c.cur) +
              '</td><td>' + esc(c.status) + '</td></tr>');
     });
     h.push('</table>');
