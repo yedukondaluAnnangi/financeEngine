@@ -226,6 +226,9 @@ function planRowFormulas(r) {
 function fxCommitFormulas(sh, rows) {
   var c0 = FX.COMMIT_CALC_COL, w = FX.COMMIT_CALC.length;
   sh.getRange(1, c0, 1, w).setValues([FX.COMMIT_CALC]).setFontWeight('bold').setBackground('#e8f0fe');
+  sh.getRange(1, c0).setNote('Columns M–Z are formulas — don\'t type here. They fill in for every row you add on the left.');
+  sh.setFrozenColumns(1);
+  [90, 100, 100, 95, 90, 100, 100, 300, 110, 110, 60, 80, 120, 80].forEach(function (px, i) { sh.setColumnWidth(c0 + i, px); });
   var last = sh.getLastRow();
   if (last < 2) return;
   if (!rows) { rows = []; for (var r = 2; r <= last; r++) rows.push(r); }
@@ -397,6 +400,7 @@ function fxDashboardCells() {
   title(136, '📊 Where your money goes — by group (CAD, money out positive)');
   put(137, 1, '=IFERROR(ARRAY_CONSTRAIN(' + fxSortedQuery('QUERY(_Calc!A1:M,"select K, sum(L) where J <> \'Moved\' and B >= \'"&' + from4 + '&"\' group by K pivot B",1)') + ',16,6),"No data")');
   styles.money.push([138, 2, 15, 5]);
+  put(153, 1, 'Income here is what landed in your accounts, HST included; "At a glance" shows it after HST.', 'note');
   title(155, '📊 By category');
   put(156, 1, '=IFERROR(ARRAY_CONSTRAIN(' + fxSortedQuery('QUERY(_Calc!A1:M,"select K, I, sum(L) where J <> \'Moved\' and B >= \'"&' + from4 + '&"\' group by K, I pivot B",1)') + ',70,7),"No data")');
   styles.money.push([157, 3, 69, 5]);

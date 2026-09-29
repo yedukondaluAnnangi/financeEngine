@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-09-29.7',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-09-29.8',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -649,6 +649,7 @@ function refreshDashboard(ss, quick) {
     planAddOnce(commitSh, 'plan_seed_v2', PLAN_ADD_V2);
     planAddOnce(commitSh, 'plan_seed_v3', PLAN_ADD_V3);
     planTidyTabs(ss);
+    planPayeesOnce(ss);
   }
   // The script still reads the data for two jobs a formula cannot do:
   // dating a new decision, and spotting a new recurring charge.
@@ -688,6 +689,31 @@ function planTidyTabs(ss) {
   });
   ss.setActiveSheet(getTab(ss, PLAN.TAB_DASH));
   props.setProperty('plan_tidy_v2', new Date().toISOString());
+}
+
+/**
+ * Once: Payees rows the labelling needs for Commitments added on 29 Sep.
+ * A PhonePe line does not name who was paid, so the India rent is told apart
+ * by its amount; the row must sit above the generic "UPI-PHONEPE" catch-all
+ * because the first matching row wins. It labels new uploads; past rows are
+ * left alone so no hand-made label is overwritten.
+ */
+function planPayeesOnce(ss) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('plan_payees_v1')) return;
+  var sh = getTab(ss, CFG.TAB_PAYEES);
+  if (!sh) return;
+  var vals = sh.getRange(1, 1, sh.getLastRow(), 4).getValues();
+  var have = vals.some(function (r) { return String(r[1]) === 'Rent — India'; });
+  if (!have) {
+    var at = -1;
+    vals.forEach(function (r, i) { if (at < 0 && String(r[0]).trim() === 'UPI-PHONEPE' && r[3] === '') at = i + 1; });
+    if (at > 0) {
+      sh.insertRowBefore(at);
+      sh.getRange(at, 1, 1, 4).setValues([['UPI-PHONEPE', 'Rent — India', 'Rent', 9000]]);
+    }
+  }
+  props.setProperty('plan_payees_v1', new Date().toISOString());
 }
 
 /** Append rows to Commitments once per key, skipping names already on the tab. */
