@@ -161,7 +161,7 @@ function planRowFormulas(r) {
   };
 
   var M = '=' + blank + '$C' + r + '*IFERROR(VLOOKUP($D' + r + ',Categories!$E:$F,2,0),1))';
-  var N = '=' + blank + '$M' + r + '*SWITCH($E' + r + ',"Weekly",52/12,"Biweekly",26/12,"Quarterly",1/3,"Half-yearly",1/6,"Yearly",1/12,"One-off",0,1))';
+  var N = '=' + blank + 'IF($E' + r + '="One-off","",$M' + r + '*SWITCH($E' + r + ',"Weekly",52/12,"Biweekly",26/12,"Quarterly",1/3,"Half-yearly",1/6,"Yearly",1/12,1)))';
   var O = '=' + blank + 'IF($E' + r + '="One-off",$M' + r + ',$N' + r + '*12))';
   var P = '=' + blank + 'IFERROR(ARRAYFORMULA(MAX(FILTER(_Calc!$A$2:$A,' + ok + '))),""))';
   var Q = '=IF($P' + r + '="","",IFERROR(ARRAYFORMULA(INDEX(FILTER(ABS(_Calc!$F$2:$F),' + ok + ',_Calc!$A$2:$A=$P' + r + '),1)),""))';
@@ -256,9 +256,9 @@ function fxDashboardCells() {
   put(2, 1, '=" Live · "&TEXT(NOW(),"yyyy-mm-dd HH:mm")&" · every number here is a formula over Transactions, Commitments and Categories. Decide things on Commitments; regroup categories on Categories."', 'note');
 
   // Upload banner: accounts whose statements are more than FX.STALE_DAYS behind.
-  put(3, 1, '=LET(acc,UNIQUE(FILTER(_Calc!C2:C,_Calc!C2:C<>"")),last,BYROW(acc,LAMBDA(a,MAXIFS(_Calc!A2:A,_Calc!C2:C,a))),' +
-            'days,TODAY()-last,s,IFERROR(FILTER(acc&" ("&days&" days)",days>' + FX.STALE_DAYS + '),""),' +
-            'IF(COUNTA(s)=0,"✅ Every account is up to date",IF(INDEX(s,1)="","✅ Every account is up to date","⚠ Upload statements to see the real picture: "&TEXTJOIN(" · ",TRUE,s))))', 'bold');
+  put(3, 1, '=IFERROR("⚠ Upload statements to see the real picture: "&TEXTJOIN(" · ",TRUE,' +
+            'FILTER(A244:A252&" ("&C244:C252&" days)",ISNUMBER(C244:C252),C244:C252>' + FX.STALE_DAYS + ')),' +
+            '"✅ Every account is up to date")', 'bold');
 
   // At a glance
   title(5, 'At a glance (CAD)');
@@ -301,11 +301,18 @@ function fxDashboardCells() {
 
   // Still to pay: anything needing attention, plus everything due in the next 14 days.
   title(21, '🧾 Still to pay — needs you now, then the next 14 days');
-  head(22, ['Next due', 'What', 'CAD', 'Amount', 'Status', 'In days', 'Account', 'Note']);
-  put(23, 1, '=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({' + CM + 'S2:S,' + CM + 'A2:A,' + CM + 'M2:M,' + CM + 'C2:C&" "&' + CM + 'D2:D,' +
-             CM + 'T2:T,' + CM + 'Z2:Z,' + CM + 'G2:G,' + CM + 'L2:L},' + CM + 'A2:A<>"",' + CM + 'I2:I<>"Cancel",' +
-             'REGEXMATCH(' + CM + 'T2:T,"^(🔴|⏳|📌|⚠)")+IFERROR((' + CM + 'Z2:Z<=14)*(' + CM + 'Z2:Z<>"")*(1-REGEXMATCH(' + CM + 'T2:T,"^(Ended|✂)")),0)),1,TRUE),20,8),' +
-             '"Nothing due in the next 14 days")');
+  head(22, ['Due', 'What', 'CAD', 'Amount', 'Status', 'Days to next', 'Account', 'Note']);
+  // key 0 = needs you (missed, charged after cancel), 1 = due now / owed, 2 = just upcoming.
+  var key = 'IF(REGEXMATCH(' + CM + 'T2:T,"^(🔴|⚠)"),0,IF(REGEXMATCH(' + CM + 'T2:T,"^(⏳|📌)"),1,2))';
+  var when = 'IF(' + key + '<2,IF(' + CM + 'R2:R="",' + CM + 'S2:S,' + CM + 'R2:R),' + CM + 'S2:S)';
+  var what = 'IF(' + key + '<2,' + CM + 'T2:T,"🗓 in "&' + CM + 'Z2:Z&" days"&' +
+             'IF(LEFT(' + CM + 'T2:T,1)="✅"," · last "&LOWER(MID(' + CM + 'T2:T,3,99)),' +
+             'IF(LEFT(' + CM + 'T2:T,1)="❔"," · last cycle unconfirmed","")))';
+  put(23, 1, '=IFERROR(ARRAY_CONSTRAIN(CHOOSECOLS(SORT(FILTER(ARRAYFORMULA({' + when + ',' + CM + 'A2:A,' + CM + 'M2:M,' +
+             CM + 'C2:C&" "&' + CM + 'D2:D,' + what + ',' + CM + 'Z2:Z,' + CM + 'G2:G,' + CM + 'L2:L,' + key + '}),' +
+             CM + 'A2:A<>"",' + CM + 'I2:I<>"Cancel",' +
+             'REGEXMATCH(' + CM + 'T2:T,"^(🔴|⏳|📌|⚠)")+IFERROR((' + CM + 'Z2:Z<=14)*(' + CM + 'Z2:Z<>"")*(1-REGEXMATCH(' + CM + 'T2:T,"^(Ended|✂)")),0)),' +
+             '9,TRUE,1,TRUE),1,2,3,4,5,6,7,8),20,8),"Nothing due in the next 14 days")');
   styles.date.push([23, 1, 20, 1]); styles.money2.push([23, 3, 20, 1]);
 
   // Payments the statements cannot confirm yet, one line per account.
@@ -351,7 +358,8 @@ function fxDashboardCells() {
   var since90 = 'TEXT(TODAY()-90,"yyyy-mm-dd")';
   head(103, ['3. Fees & charges (pure waste)', 'Times', 'Last 90 days', 'Per year']);
   put(104, 1, '=IFERROR(ARRAY_CONSTRAIN(QUERY(_Calc!A2:M,"select E, count(H), sum(L) where K = \'Fees & charges\' and A > date \'"&' + since90 + '&"\' group by E order by sum(L) desc label count(H) \'\', sum(L) \'\'",0),8,3),"No fees in the last 90 days")');
-  put(104, 4, '=ARRAYFORMULA(IF(ISNUMBER(C104:C111),C104:C111*365/90,""))');
+  put(104, 4, '=ARRAYFORMULA(IF(ISNUMBER(C104:C111),IFERROR(VLOOKUP(A104:A111,' + CM + 'A2:O,15,0),' +
+              'C104:C111*365/MAX(30,MIN(90,MAX(_Calc!A2:A)-MIN(_Calc!A2:A)+1))),""))');
   styles.money2.push([104, 3, 8, 2]);
 
   var since30 = 'TEXT(MAX(_Calc!A2:A)-30,"yyyy-mm-dd")';
@@ -451,6 +459,7 @@ function fxCommitColours(sh) {
  * version changed or the Dashboard's first formula is missing.
  */
 function planInstallFormulas(ss, commitSh, cats) {
+  if (ss.getSpreadsheetTimeZone() !== CFG_TZ()) ss.setSpreadsheetTimeZone(CFG_TZ());
   fxCategoriesTab(ss, cats);
   var props = PropertiesService.getScriptProperties();
   var dash = getTab(ss, PLAN.TAB_DASH);
