@@ -309,10 +309,11 @@ function fxDashboardCells() {
   var sumC = function (col, crit) { return 'SUMIFS(' + CM + col + '2:' + col + ',' + crit + ')'; };
   var plan = [
     ['Expected in', '=' + sumC('U', CM + 'W2:W,"In"'), 'Income on Commitments due this month'],
-    ['Committed bills & loans', '=-' + sumC('U', CM + 'W2:W,"Out",' + CM + 'I2:I,"<>Cancel"'), 'Every Keep / undecided commitment due this month'],
+    ['Committed bills & loans', '=-' + sumC('U', CM + 'W2:W,"Out",' + CM + 'I2:I,"<>Cancel",' + CM + 'X2:X,"<>House"'), 'Every Keep / undecided commitment due this month (house payments are below)'],
     ['Everyday spending', '=-MAX(0,SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"Living")-' + sumC('N', CM + 'X2:X,"Living",' + CM + 'W2:W,"Out",' + CM + 'I2:I,"<>Cancel"') + ')', 'Last month\'s living costs minus the bills above'],
     ['Left over', '=B12+B13+B14', ''],
-    ['House construction pace', '=-SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"House")', 'Last month — a project, not a living cost'],
+    ['House construction', '=-MAX(SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"House"),' + sumC('U', CM + 'X2:X,"House",' + CM + 'I2:I,"<>Cancel"') + ')',
+     'Last month\'s pace, or the house payments due this month if larger — a project, not a living cost'],
     ['Left over after the house', '=B15+B16', ''],
     ['Still to pay this month', '=-' + sumC('Y', CM + 'W2:W,"Out"'), 'Due this month and not seen paid yet'],
     ['Still to come in this month', '=' + sumC('Y', CM + 'W2:W,"In"'), '']
