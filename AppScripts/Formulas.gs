@@ -267,7 +267,7 @@ function fxHst(crit) {
  * a fixed number of reserved rows (ARRAY_CONSTRAIN) so they never collide.
  */
 function fxDashboardCells() {
-  var cells = [], styles = { title: [], head: [], note: [], bold: [], money: [], money2: [], date: [] };
+  var cells = [], styles = { title: [], head: [], note: [], bold: [], money: [], money2: [], date: [], headline: [] };
   function put(r, c, v, st) { cells.push([r, c, v]); if (st) (Array.isArray(st) ? st : [st]).forEach(function (s) { styles[s].push([r, c]); }); }
   function title(r, t) { put(r, 1, t, 'title'); }
   function head(r, list) { list.forEach(function (h, i) { put(r, i + 1, h, 'head'); }); }
@@ -279,6 +279,11 @@ function fxDashboardCells() {
   put(3, 1, '=IFERROR("⚠ Upload statements to see the real picture: "&TEXTJOIN(" · ",TRUE,' +
             'FILTER(A244:A252&" ("&C244:C252&" days)",ISNUMBER(C244:C252),C244:C252>' + FX.STALE_DAYS + ')),' +
             '"✅ Every account is up to date")', 'bold');
+
+  // The whole situation in one line.
+  put(4, 1, '="👉 This month: "&TEXT(B15,"$#,##0;-$#,##0")&" left after bills and everyday spending ("&TEXT(B17,"$#,##0;-$#,##0")&" after the house) · "' +
+            '&TEXT(-B18,"$#,##0")&" still to pay · "' +
+            '&(COUNTIF(E23:E42,"🔴*")+COUNTIF(E23:E42,"⏳*")+COUNTIF(E23:E42,"📌*")+COUNTIF(E23:E42,"⚠*"))&" item(s) need you (below)"', 'headline');
 
   // At a glance
   title(5, 'At a glance (CAD)');
@@ -439,6 +444,7 @@ function fxDashboardTab(ss) {
   var W = 8;
   function rng(p) { return sh.getRange(p[0], p[1], p[2] || 1, p[3] || 1); }
   d.styles.title.forEach(function (p) { sh.getRange(p[0], 1, 1, W).setFontWeight('bold').setFontSize(12).setBackground('#e8f0fe'); });
+  d.styles.headline.forEach(function (p) { sh.getRange(p[0], 1, 1, W).setFontWeight('bold').setFontSize(13).setBackground('#fff8e1'); });
   d.styles.head.forEach(function (p) { rng(p).setFontWeight('bold').setBackground('#f1f3f4'); });
   d.styles.note.forEach(function (p) { rng(p).setFontColor('#5f6368').setFontStyle('italic'); });
   d.styles.bold.forEach(function (p) { rng(p).setFontWeight('bold'); });
@@ -459,7 +465,7 @@ function fxDashboardTab(ss) {
     rule('❔', null, '#80868b'), rule('✅', '#e6f4ea')
   ]);
   [230, 180, 110, 120, 240, 110, 110, 260].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
-  sh.setFrozenRows(3);
+  sh.setFrozenRows(4);
   return sh;
 }
 
