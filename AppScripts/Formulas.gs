@@ -119,6 +119,11 @@ function fxCategoriesTab(ss, extraCats) {
     sh.getRange(sh.getLastRow() + 1, 1, add.length, 3).setValues(add);
   }
 
+  // HST charged on top of business income: owed to CRA, not yours. Yours to change.
+  sh.getRange('E8').setValue('HST on business income').setFontWeight('bold');
+  if (sh.getRange('F8').getValue() === '') sh.getRange('F8').setValue(0.13).setNumberFormat('0%');
+  sh.getRange('E9').setValue('Deposits in category "Business income" include it; the Dashboard takes it out.').setFontColor('#5f6368');
+
   // Currency rates: always equal to Config.gs.
   var rates = Object.keys(CFG.FX_TO_CAD).map(function (k) { return [k, CFG.FX_TO_CAD[k]]; });
   sh.getRange(2, 5, Math.max(rates.length, 5), 2).clearContent();
@@ -248,6 +253,11 @@ function fxSortedQuery(q) {
 }
 var FX_M1 = 'TEXT(EDATE(TODAY(),-1),"yyyy-mm")';
 var CM = 'Commitments!';
+var FX_HST = 'Categories!$F$8';
+/** The HST share of business income matching the given extra SUMIFS criteria. */
+function fxHst(crit) {
+  return '(SUMIFS(_Calc!$H:$H,_Calc!$I:$I,"Business income"' + crit + ')*' + FX_HST + '/(1+' + FX_HST + '))';
+}
 
 /**
  * The Dashboard layout: [row, col, value-or-formula, style]. Lists spill into
@@ -269,12 +279,12 @@ function fxDashboardCells() {
 
   // At a glance
   title(5, 'At a glance (CAD)');
-  head(6, ['', 'Money in', 'Living costs', 'House construction', 'Lent (net) / saved', 'Net']);
+  head(6, ['', 'Money in (after HST)', 'Living costs', 'House construction', 'Lent (net) / saved', 'Net']);
   [[7, FX_M0, '=TEXT(TODAY(),"mmm yyyy")&" so far"'], [8, FX_M1, '=TEXT(EDATE(TODAY(),-1),"mmm yyyy")']].forEach(function (x) {
     var r = x[0], m = x[1];
     var sum = function (k) { return 'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + m + ',_Calc!$J:$J,"' + k + '")'; };
     put(r, 1, x[2]);
-    put(r, 2, '=' + sum('Income'), 'money');
+    put(r, 2, '=' + sum('Income') + '-' + fxHst(',_Calc!$B:$B,' + m), 'money');
     put(r, 3, '=' + sum('Living'), 'money');
     put(r, 4, '=' + sum('House'), 'money');
     put(r, 5, '=' + sum('Lent') + '+' + sum('Saved'), 'money');
@@ -299,6 +309,8 @@ function fxDashboardCells() {
     ['Still to pay this month', '=-' + sumC('Y', CM + 'W2:W,"Out"'), 'Due this month and not seen paid yet'],
     ['Still to come in this month', '=' + sumC('Y', CM + 'W2:W,"In"'), '']
   ];
+  plan.push(['HST collected this year — owed to CRA', '=-' + fxHst(',_Calc!$A:$A,">="&DATE(YEAR(TODAY()),1,1)'),
+            'Already left out of "Money in" above; set it aside. Rate on the Categories tab.']);
   plan.forEach(function (p, i) {
     var r = 12 + i;
     put(r, 1, p[0], i === 3 || i === 5 ? 'bold' : null);
