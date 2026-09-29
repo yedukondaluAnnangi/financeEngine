@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-09-29.3',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-09-29.4',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -630,9 +630,13 @@ function planMoney(n) {
    =========================================================================== */
 
 /**
- * Rebuild the Dashboard. ss is optional (onEdit passes its own, because a
- * simple trigger may not open a spreadsheet by id).
- * quick = true skips appending newly detected commitments.
+ * Upkeep: make sure every formula is in place and every input is complete.
+ * Nothing on the Dashboard is calculated here — the sheet does that live.
+ *   - Commitments: one-time additions, decision dates, newly spotted
+ *     recurring charges (Review), formulas on every row
+ *   - Categories: any category not listed yet, currency rates
+ *   - Dashboard and _Calc: rewritten when the code version changes
+ * ss is optional. quick = true skips the one-time additions and detection.
  */
 function refreshDashboard(ss, quick) {
   ss = ss || SpreadsheetApp.openById(CFG.SHEET_ID);
@@ -646,20 +650,18 @@ function refreshDashboard(ss, quick) {
     planAddOnce(commitSh, 'plan_seed_v3', PLAN_ADD_V3);
     planTidyTabs(ss);
   }
-  var cv = planCommitValues(commitSh);
-  var M = planAnalyse(txVals, cv, { today: today, fx: CFG.FX_TO_CAD });
-
-  // Write back to Commitments: decision dates, then newly found recurring charges.
-  var changed = false;
-  M.decidedFill.forEach(function (row) { commitSh.getRange(row, 10).setValue(today); changed = true; });
+  // The script still reads the data for two jobs a formula cannot do:
+  // dating a new decision, and spotting a new recurring charge.
+  var M = planAnalyse(txVals, planCommitValues(commitSh), { today: today, fx: CFG.FX_TO_CAD });
+  M.decidedFill.forEach(function (row) { commitSh.getRange(row, 10).setValue(today); });
   if (!quick && M.detected.length) {
     commitSh.getRange(commitSh.getLastRow() + 1, 1, M.detected.length, PLAN.COMMIT_COLS.length).setValues(M.detected);
-    changed = true;
   }
-  if (changed) M = planAnalyse(txVals, planCommitValues(commitSh), { today: today, fx: CFG.FX_TO_CAD });
 
-  planRender(ss, M);
-  return M;
+  var cats = txVals.map(function (r) { return r[9]; })
+    .concat(planCommitValues(commitSh).map(function (r) { return r[7]; }));
+  planInstallFormulas(ss, commitSh, cats);
+  SpreadsheetApp.flush();
 }
 
 /**
@@ -670,8 +672,8 @@ function refreshDashboard(ss, quick) {
  */
 function planTidyTabs(ss) {
   var props = PropertiesService.getScriptProperties();
-  if (props.getProperty('plan_tidy_v1')) return;
-  var order = [PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, CFG.TAB_PAYEES];
+  if (props.getProperty('plan_tidy_v2')) return;
+  var order = [PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, CFG.TAB_PAYEES, 'Categories'];
   order.forEach(function (name, i) {
     var sh = getTab(ss, name);
     if (!sh) return;
@@ -685,7 +687,7 @@ function planTidyTabs(ss) {
     sh.hideSheet();
   });
   ss.setActiveSheet(getTab(ss, PLAN.TAB_DASH));
-  props.setProperty('plan_tidy_v1', new Date().toISOString());
+  props.setProperty('plan_tidy_v2', new Date().toISOString());
 }
 
 /** Append rows to Commitments once per key, skipping names already on the tab. */
@@ -734,328 +736,117 @@ function planCommitmentsTab(ss) {
 }
 
 
-/* ---- rendering ---------------------------------------------------------- */
-
-var P_W = 8;   // dashboard width in columns
-
-function planRender(ss, M) {
-  var sh = getTab(ss, PLAN.TAB_DASH);
-  if (!sh) { sh = ss.insertSheet(PLAN.TAB_DASH, 0); }
-  var out = [], fmt = { title: [], head: [], money: [], money2: [], red: [], amber: [], grey: [], green: [], bold: [], note: [] };
-
-  function row(cells, style) {
-    var r = cells.slice(0, P_W);
-    while (r.length < P_W) r.push('');
-    out.push(r);
-    var n = out.length;
-    if (style) (Array.isArray(style) ? style : [style]).forEach(function (s) { fmt[s].push('A' + n + ':' + String.fromCharCode(64 + P_W) + n); });
-    return n;
-  }
-  function money(n, cols, two) {   // cols: 1-based column numbers holding money on row n
-    cols.forEach(function (c) { fmt[two ? 'money2' : 'money'].push(String.fromCharCode(64 + c) + n); });
-  }
-  function gap() { row([]); }
-  function title(t) { gap(); row([t], 'title'); }
-
-  var ts = Utilities.formatDate(new Date(), CFG_TZ(), 'yyyy-MM-dd HH:mm');
-  row(['💰 Finance — where you stand'], 'title');
-  row(['Rebuilt ' + ts + ' · statements up to ' + (M.dataThrough || '—') +
-       ' · updates itself after every upload and every morning. Don\'t edit this tab — decide things on the Commitments tab.'], 'note');
-
-  // ---- what to upload: stale statements hide everything below ---------------
-  var stale = M.accounts.filter(function (a) { return a.behind > PLAN.STALE_DAYS; });
-  if (stale.length) {
-    gap();
-    var nb = row(['⚠ Upload statements to see the real picture: ' + stale.map(function (a) {
-      var blind = M.dues.filter(function (d) { return d.state === 'unseen' && d.acct && planAcctMatches(d.acct, a.name); }).length;
-      return a.name + ' (' + a.behind + ' days' + (blind ? ', ' + blind + ' payments unconfirmed' : '') + ')';
-    }).join(' · ')], 'bold');
-    fmt.amber.push('A' + nb + ':H' + nb);
-  }
-
-  // ---- at a glance -------------------------------------------------------
-  title('At a glance (CAD)');
-  row(['', 'Money in', 'Living costs', 'House construction', 'Lent (net) / saved', 'Net'], 'head');
-  function flowRow(label, f) { var n = row([label, f.inn, f.living, f.house, f.other, f.net]); money(n, [2, 3, 4, 5, 6]); if (f.net < 0) fmt.red.push('F' + n); }
-  flowRow(pMonthName(M.thisMonth) + ' so far', M.flowThis);
-  if (M.flowLast) flowRow(pMonthName(M.lastMonth), M.flowLast);
-  if (M.flowAvg && M.fullMonths.length > 1) flowRow('Average of last ' + M.fullMonths.length + ' months', M.flowAvg);
-  var p = M.progress;
-  var n0 = row(['Phase 2 progress', p.decided + ' of ' + p.total + ' recurring costs decided',
-                '', M.waste.undecided.length ? M.waste.undecided.length + ' waiting for Keep/Cancel (' + planMoney(M.waste.undecidedYearly) + '/yr)' : 'All decided ✅'], 'bold');
-  if (M.waste.undecided.length) fmt.amber.push('A' + n0 + ':H' + n0);
-
-  // ---- this month's plan ---------------------------------------------------
-  title('This month\'s plan — ' + pMonthName(M.thisMonth));
-  var o = M.outlook;
-  [['Expected in', o.expectedIn, 'Income rows on the Commitments tab due this month'],
-   ['Committed bills & loans', -o.committed, 'Every Keep/undecided commitment due this month'],
-   ['Everyday spending', -o.everyday, 'Average of the last ' + M.fullMonths.length + ' full month(s), bills excluded'],
-   ['Left over', o.leftOver, ''],
-   ['House construction pace', -o.house, 'Monthly average — a project, not a living cost'],
-   ['Left over after the house', o.leftAfterHouse, ''],
-   ['Still to pay this month', -o.remainingOut, 'Commitments not seen paid yet'],
-   ['Still to come in this month', o.remainingIn, '']
-  ].forEach(function (x, i) {
-    var n = row([x[0], x[1], x[2]], i === 3 || i === 5 ? 'bold' : null);
-    money(n, [2]);
-    if ((i === 3 || i === 5) && x[1] < 0) fmt.red.push('A' + n + ':B' + n);
-    if ((i === 3 || i === 5) && x[1] >= 0) fmt.green.push('A' + n + ':B' + n);
-  });
-
-  // ---- still to pay --------------------------------------------------------
-  title('🧾 Still to pay — needs you now, then the next 14 days');
-  row(['Due', 'What', 'Amount (CAD)', 'Amount', 'Status', 'Account', 'Note'], 'head');
-  var monthStart = M.thisMonth + '-01';
-  var prevStart = pMonthAdd(M.thisMonth, -1) + '-01';
-  var live = M.dues.filter(function (d) { return d.state !== 'paid' && d.decision !== 'Cancel'; });
-  var now = live.filter(function (d) {
-    return d.state === 'nodate' || d.state === 'due' ||
-           (d.state === 'missed' && d.date >= prevStart) ||
-           (d.state === 'upcoming' && d.inDays <= 14);
-  });
-  if (!now.length) row(['Nothing due in the next 14 days.']);
-  now.forEach(function (d) {
-    var n = row([d.date, (d.income ? '⬇ ' : '') + d.name, d.cad, d.amount + ' ' + d.cur, planDueStatus(d), d.acct, d.notes]);
-    money(n, [3], true);
-    if (d.state === 'missed') fmt.red.push('A' + n + ':H' + n);
-    else if (d.state === 'due' || d.state === 'nodate' || d.inDays <= 7) fmt.amber.push('A' + n + ':H' + n);
-  });
-  // Payments the statements cannot confirm yet: one line per account, not one per bill.
-  var blind = {};
-  live.forEach(function (d) {
-    if (d.state !== 'unseen' || d.date < prevStart) return;
-    var k = d.acct || '(no account set)';
-    (blind[k] = blind[k] || { names: [], cad: 0, cov: d.coverage }).names.push(d.name + ' ' + d.date.slice(5));
-    blind[k].cad += d.cad;
-  });
-  Object.keys(blind).forEach(function (k) {
-    var b = blind[k];
-    var n = row(['❔ Can\'t confirm yet', k + (b.cov && k !== '(no account set)' ? ' — statements stop ' + b.cov : ''), pR(b.cad), '',
-                 b.names.length + ' payment(s): ' + b.names.join(', ')], 'grey');
-    money(n, [3], true);
-  });
-  var later = live.filter(function (d) { return d.state === 'upcoming' && d.inDays > 14 && !d.income; });
-  if (later.length) {
-    var nl = row(['Later', later.length + ' more bill(s) in 15–35 days', pR(later.reduce(function (s2, d) { return s2 + d.cad; }, 0)), '',
-                  later.map(function (d) { return d.name; }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(', ')], 'note');
-    money(nl, [3], true);
-  }
-  if (M.cards.length) {
-    gap();
-    row(['Credit card', 'Spent since last payment', 'Last payment', 'Data up to'], 'head');
-    M.cards.forEach(function (c) {
-      var n = row([c.acct, c.spent, c.lastPay ? c.lastPay.date + ' (' + planMoney(c.lastPay.cad) + ')' : 'none seen', c.through]);
-      money(n, [2], true);
-    });
-  }
-
-  gap();
-  row(['✅ Already paid / received this month'], 'bold');
-  row(['Due', 'What', 'Paid (CAD)', 'Listed', 'Status'], 'head');
-  var paid = M.dues.filter(function (d) { return d.state === 'paid' && d.date >= monthStart && d.date <= pAddDays(M.today, 0); });
-  if (!paid.length) row(['None seen yet this month.']);
-  paid.forEach(function (d) {
-    var n = row([d.date, (d.income ? '⬇ ' : '') + d.name, d.paidCad, d.amount + ' ' + d.cur, planDueStatus(d)]);
-    money(n, [3], true);
-    if (d.up) fmt.amber.push('A' + n + ':H' + n);
-  });
-
-  // ---- waste ---------------------------------------------------------------
-  var W = M.waste;
-  title('🔥 Where you\'re wasting money');
-  row(['1. Recurring costs waiting for your Keep / Cancel', '', 'Per month', 'Per year', 'Last charged', 'Note'], 'head');
-  if (!W.undecided.length) row(['Every recurring cost has a decision ✅']);
-  W.undecided.forEach(function (u) {
-    var n = row([u.name, '', u.monthly, u.yearly, u.lastPaid || 'not seen', u.notes]);
-    money(n, [3, 4], true);
-  });
-  if (W.undecided.length) { var nt = row(['Total you could still trim', '', pR(W.undecidedYearly / 12), W.undecidedYearly], 'bold'); money(nt, [3, 4]); }
-  if (W.cancelledSaving) { var nc = row(['Already cancelled — saves', '', pR(W.cancelledSaving / 12), W.cancelledSaving], 'green'); money(nc, [3, 4]); }
-
-  gap();
-  row(['2. Cancelled but still charging'], 'head');
-  if (!W.stillCharging.length) row(['Nothing — every cancelled item has stopped (or not charged since you decided).']);
-  W.stillCharging.forEach(function (s) {
-    var n = row([s.name, 'charged ' + s.date, s.cad, 'cancelled ' + s.decidedOn], 'red'); money(n, [3], true);
-  });
-
-  gap();
-  row(['3. Bills that went up', '', 'Extra', 'On'], 'head');
-  if (!W.priceUp.length) row(['None — every bill was paid at its listed amount.']);
-  W.priceUp.forEach(function (d) { row([d.name, '', d.up + ' ' + d.cur, d.paidOn + ' (' + d.paidAmt + ' vs ' + d.amount + ')'], 'amber'); });
-
-  gap();
-  row(['4. Fees & charges (pure waste)', 'Times', 'Last 90 days', 'Per year'], 'head');
-  if (!W.fees.length) row(['No fees seen.']);
-  W.fees.forEach(function (f) { var n = row([f.payee, f.n, f.cad, f.yearly]); money(n, [3, 4], true); });
-  if (W.fees.length) { var nf = row(['Fees per year at this rate', '', '', W.feesYearly], 'bold'); money(nf, [4]); }
-
-  gap();
-  row(['5. Small habits that add up (last 30 days of data)', 'Times', 'Spent', 'Per year', 'Category'], 'head');
-  if (!W.habits.length) row(['No place visited ' + PLAN.HABIT_MIN + '+ times in 30 days.']);
-  W.habits.forEach(function (h) { var n = row([h.payee, h.n, h.cad, h.yearly, h.cat]); money(n, [3, 4], true); });
-
-  gap();
-  row(['6. Lifestyle spending', '', pMonthName(M.thisMonth) + ' so far', M.fullMonths.length ? pMonthName(M.lastMonth) : '', 'Per year at last month\'s rate'], 'head');
-  W.lifestyle.forEach(function (l) { var n = row([l.cat, '', l.thisM, l.lastM, l.yearly]); money(n, [3, 4, 5]); });
-  if (W.lifestyle.length) { var nl = row(['All lifestyle', '', '', '', W.lifestyleYearly], 'bold'); money(nl, [5]); }
-
-  // ---- where the money goes ------------------------------------------------
-  title('📊 Where your money goes (CAD, net of refunds)');
-  var withAvg = M.fullMonths.length > 1;
-  var head = ['Group / category', ''].concat(M.months.map(pMonthName));
-  if (withAvg) head.push('Avg of ' + M.fullMonths.length + ' full months');
-  row(head.slice(0, P_W), 'head');
-  PLAN.GROUP_ORDER.forEach(function (g) {
-    if (!M.cats[g]) return;
-    var gRow = [g, ''].concat(M.months.map(function (m) { return M.groupMonth(g, m); }));
-    if (withAvg) gRow.push(pR(M.fullMonths.reduce(function (s, m) { return s + M.groupMonth(g, m); }, 0) / M.fullMonths.length));
-    var n = row(gRow.slice(0, P_W), g === 'Moved between your accounts' ? 'grey' : 'bold');
-    money(n, gRow.slice(2, P_W).map(function (_, i) { return i + 3; }));
-    Object.keys(M.cats[g]).sort(function (a, b) {
-      return (M.cats[g][b][M.lastMonth] || 0) + (M.cats[g][b][M.thisMonth] || 0) - (M.cats[g][a][M.lastMonth] || 0) - (M.cats[g][a][M.thisMonth] || 0);
-    }).forEach(function (c) {
-      var cRow = ['', c].concat(M.months.map(function (m) { return M.cats[g][c][m] || 0; }));
-      if (withAvg) cRow.push(pR(M.fullMonths.reduce(function (s, m) { return s + (M.cats[g][c][m] || 0); }, 0) / M.fullMonths.length));
-      var n2 = row(cRow.slice(0, P_W), g === 'Moved between your accounts' ? 'grey' : null);
-      money(n2, cRow.slice(2, P_W).map(function (_, i) { return i + 3; }));
-    });
-  });
-  row(['"Moved between your accounts" (card payments, own transfers, money sent to India) is shown for reference and left out of every total.'], 'note');
-
-  title('Biggest payees');
-  row(['' + pMonthName(M.thisMonth) + ' so far', 'Category', 'Spent', 'Times', '', M.fullMonths.length ? pMonthName(M.lastMonth) : '', 'Spent', 'Times'], 'head');
-  for (var i = 0; i < Math.max(M.topThis.length, M.topLast.length); i++) {
-    var a = M.topThis[i], b = M.topLast[i];
-    var n3 = row([a ? a.payee : '', a ? a.cat : '', a ? a.cad : '', a ? a.n : '', '', b ? b.payee : '', b ? b.cad : '', b ? b.n : '']);
-    money(n3, [3, 7], true);
-  }
-
-  // ---- data health ---------------------------------------------------------
-  title('🧹 Data health');
-  row(['Account', 'Latest transaction', 'Days behind'], 'head');
-  M.accounts.forEach(function (a) {
-    var n = row([a.name, a.last, a.behind]);
-    if (a.behind > 14) fmt.amber.push('A' + n + ':C' + n);
-  });
-  gap();
-  row([M.unlabelled.count + ' transaction(s) have no payee/category yet — they count under "Not labelled yet". Add a Payees pattern, then Finance › Re-label everything.'], M.unlabelled.count ? 'amber' : 'note');
-  M.unlabelled.top.forEach(function (u) { var n = row([u.desc, u.n + '×', u.cad]); money(n, [3], true); });
-
-  // ---- write ---------------------------------------------------------------
-  sh.clear();
-  sh.getRange(1, 1, out.length, P_W).setValues(out);
-  function apply(list, fn) { if (list.length) fn(sh.getRangeList(list)); }
-  apply(fmt.money,  function (r) { r.setNumberFormat('$#,##0;[Red]-$#,##0'); });
-  apply(fmt.money2, function (r) { r.setNumberFormat('$#,##0.00;[Red]-$#,##0.00'); });
-  apply(fmt.head,   function (r) { r.setFontWeight('bold').setBackground('#f1f3f4'); });
-  apply(fmt.bold,   function (r) { r.setFontWeight('bold'); });
-  apply(fmt.title,  function (r) { r.setFontWeight('bold').setFontSize(12).setBackground('#e8f0fe'); });
-  apply(fmt.note,   function (r) { r.setFontColor('#5f6368').setFontStyle('italic'); });
-  apply(fmt.red,    function (r) { r.setBackground('#fce8e6'); });
-  apply(fmt.amber,  function (r) { r.setBackground('#fef7e0'); });
-  apply(fmt.grey,   function (r) { r.setFontColor('#80868b'); });
-  apply(fmt.green,  function (r) { r.setBackground('#e6f4ea'); });
-  [260, 190, 120, 120, 280, 120, 110, 110].forEach(function (w, c) { sh.setColumnWidth(c + 1, w); });
-  sh.setFrozenRows(2);
-  SpreadsheetApp.flush();
-}
-
-
-/* ---- automatic refresh ---------------------------------------------------- */
+/* ---- automatic upkeep ---------------------------------------------------------- */
 
 /**
  * Called from every Inbox poll. Cheap unless it is the first poll of the
- * day: then it rebuilds the dashboard (due dates move with the calendar),
- * and in the first days of a month it sends last month's review.
+ * day (or the first after a deploy): then it runs the upkeep, and in the
+ * first days of a month it sends last month's review.
  */
 function planDaily() {
   var props = PropertiesService.getScriptProperties();
   var today = Utilities.formatDate(new Date(), CFG_TZ(), 'yyyy-MM-dd');
   // Keyed on the code version too, so a deploy that bumps PLAN.VERSION
-  // rebuilds on the next poll instead of the next morning.
+  // runs the upkeep on the next poll instead of the next morning.
   var stamp = today + '|' + PLAN.VERSION;
   if (props.getProperty('plan_day') === stamp) return;
   props.setProperty('plan_day', stamp);
-  var M = refreshDashboard();
+  var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
+  refreshDashboard(ss);
   var month = today.slice(0, 7);
   if (+today.slice(8, 10) <= PLAN.REVIEW_BY_DAY && props.getProperty('plan_review') !== month) {
     props.setProperty('plan_review', month);
-    sendMonthlyReview(M);
+    SpreadsheetApp.flush();
+    sendMonthlyReview(ss);
   }
 }
 
-/** Simple trigger: a Keep/Cancel decision shows on the dashboard straight away. */
+/**
+ * Simple trigger. A row you add or change on Commitments gets its formulas
+ * at once, and a Keep/Cancel decision gets today's date in "Decided on".
+ * Everything else on the Dashboard recalculates by itself.
+ */
 function onEdit(e) {
   try {
-    if (!e || !e.range || e.range.getSheet().getName() !== PLAN.TAB_COMMIT) return;
-    refreshDashboard(e.source, true);
+    if (!e || !e.range) return;
+    var sh = e.range.getSheet();
+    if (sh.getName() !== PLAN.TAB_COMMIT) return;
+    var r0 = Math.max(2, e.range.getRow()), r1 = e.range.getLastRow();
+    if (e.range.getColumn() > PLAN.COMMIT_COLS.length) return;   // a formula column: nothing to do
+    var today = Utilities.formatDate(new Date(), CFG_TZ(), 'yyyy-MM-dd');
+    var rows = [];
+    for (var r = r0; r <= r1; r++) {
+      rows.push(r);
+      var v = sh.getRange(r, 9, 1, 2).getValues()[0];      // Decision, Decided on
+      if (v[0] && !/^review$/i.test(v[0]) && !v[1]) sh.getRange(r, 10).setValue(today);
+    }
+    fxCommitFormulas(sh, rows);
   } catch (err) {
-    // A simple trigger has no one to report to; the daily refresh catches up.
+    // A simple trigger has no one to report to; the daily upkeep catches up.
   }
 }
 
 
-/* ---- emails ----------------------------------------------------------------- */
+/* ---- emails: numbers read from the sheet, not recalculated ------------------------- */
 
 function planDashUrl(ss) {
   var sh = getTab(ss || SpreadsheetApp.openById(CFG.SHEET_ID), PLAN.TAB_DASH);
   return sheetUrl() + (sh ? '#gid=' + sh.getSheetId() : '');
 }
 
+/** Commitments rows with their live formula columns, as objects. */
+function planCommitRows(ss) {
+  var sh = getTab(ss, PLAN.TAB_COMMIT);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var w = PLAN.COMMIT_COLS.length + FX.COMMIT_CALC.length;
+  return sh.getRange(2, 1, sh.getLastRow() - 1, w).getDisplayValues().map(function (r) {
+    return { name: r[0], amount: r[2], cur: r[3], acct: r[6], decision: r[8], perYear: r[14],
+             next: r[18], status: r[19], kind: r[22], inDays: r[25] === '' ? null : Number(r[25]) };
+  }).filter(function (c) { return c.name; });
+}
+
 /** "Due this week" block for the Friday reminder. */
-function planDigestHtml(M) {
-  var soon = M.dues.filter(function (d) {
-    return d.state !== 'paid' && d.decision !== 'Cancel' &&
-           ((d.state === 'missed' && d.date >= pAddDays(M.today, -14)) || d.state === 'due' || (d.state === 'upcoming' && d.inDays <= 7));
+function planDigestHtml(ss) {
+  var rows = planCommitRows(ss);
+  var soon = rows.filter(function (c) {
+    return c.decision !== 'Cancel' &&
+           (/^(🔴|⏳|📌|⚠)/.test(c.status) || (c.inDays !== null && c.inDays <= 7 && !/^(Ended|✂)/.test(c.status)));
   });
   var h = ['<h3 style="margin:18px 0 6px">🧾 Money due this week</h3>'];
   if (!soon.length) h.push('<p>Nothing due in the next 7 days.</p>');
   else {
     h.push('<table cellpadding="6" style="border-collapse:collapse;font-size:13px">');
-    soon.forEach(function (d) {
-      h.push('<tr style="border-top:1px solid #e0e0e0' + (d.state === 'missed' ? ';background:#fce8e6' : '') + '"><td>' + esc(d.date) +
-             '</td><td>' + esc(d.name) + '</td><td align="right">' + esc(d.amount + ' ' + d.cur) + '</td><td>' + esc(planDueStatus(d)) + '</td></tr>');
+    soon.forEach(function (c) {
+      h.push('<tr style="border-top:1px solid #e0e0e0' + (/^(🔴|⚠)/.test(c.status) ? ';background:#fce8e6' : '') + '"><td>' +
+             esc(c.next || '') + '</td><td>' + esc(c.name) + '</td><td align="right">' + esc(c.amount + ' ' + c.cur) +
+             '</td><td>' + esc(c.status) + '</td></tr>');
     });
     h.push('</table>');
   }
-  if (M.waste.undecided.length) {
-    h.push('<p>' + M.waste.undecided.length + ' recurring cost(s) still need a Keep/Cancel decision — ' +
-           planMoney(M.waste.undecidedYearly) + ' a year between them.</p>');
-  }
-  if (M.waste.stillCharging.length) h.push('<p style="color:#c5221f">⚠ ' + M.waste.stillCharging.length + ' charge(s) from something you cancelled.</p>');
-  h.push('<p>' + button(planDashUrl(), 'Open the dashboard') + '</p>');
+  var undecided = rows.filter(function (c) { return c.kind === 'Out' && (!c.decision || /^review$/i.test(c.decision)); });
+  if (undecided.length) h.push('<p>' + undecided.length + ' recurring cost(s) still need a Keep/Cancel decision.</p>');
+  h.push('<p>' + button(planDashUrl(ss), 'Open the dashboard') + '</p>');
   return h.join('\n');
 }
 
-/** First days of each month: how last month went. */
-function sendMonthlyReview(M) {
-  if (!M.flowLast) return;
-  var f = M.flowLast, W = M.waste;
-  var rows = [];
-  PLAN.GROUP_ORDER.forEach(function (g) {
-    if (!M.cats[g] || g === 'Moved between your accounts' || g === 'Income') return;
-    var v = M.groupMonth(g, M.lastMonth);
-    if (v) rows.push('<tr style="border-top:1px solid #e0e0e0"><td>' + esc(g) + '</td><td align="right">' + planMoney(v) + '</td></tr>');
-  });
+/** First days of each month: last month, straight from the Dashboard's formulas. */
+function sendMonthlyReview(ss) {
+  var sh = getTab(ss, PLAN.TAB_DASH);
+  if (!sh) return;
+  var glance = sh.getRange('A8:F8').getDisplayValues()[0];           // last month
+  var groups = sh.getRange('A137:F152').getDisplayValues();          // by group, last four months
+  var head = groups[0];
+  var col = head.indexOf(Utilities.formatDate(new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1), CFG_TZ(), 'yyyy-MM'));
+  var rows = groups.slice(1).filter(function (r) { return r[0] && col > 0 && r[col]; })
+    .map(function (r) { return '<tr style="border-top:1px solid #e0e0e0"><td>' + esc(r[0]) + '</td><td align="right">' + esc(r[col]) + '</td></tr>'; });
+  var plan = sh.getRange('A12:B19').getDisplayValues();
   var h = ['<div style="font-family:Arial,sans-serif;font-size:14px;color:#202124">',
-    '<p><b>' + esc(pMonthName(M.lastMonth)) + '</b>: in ' + planMoney(f.inn) + ', living costs ' + planMoney(f.living) +
-    ', house ' + planMoney(f.house) + ', lent/saved ' + planMoney(f.other) + ' → <b>net ' + planMoney(f.net) + '</b>.</p>',
+    '<p><b>' + esc(glance[0]) + '</b>: in ' + esc(glance[1]) + ', living costs ' + esc(glance[2]) + ', house ' + esc(glance[3]) +
+    ', lent/saved ' + esc(glance[4]) + ' → <b>net ' + esc(glance[5]) + '</b>.</p>',
     '<table cellpadding="6" style="border-collapse:collapse;font-size:13px">' + rows.join('') + '</table>',
-    '<h3 style="margin:18px 0 6px">🔥 Worth trimming</h3><ul>'];
-  if (W.undecided.length) h.push('<li>' + W.undecided.length + ' recurring cost(s) with no decision: ' + planMoney(W.undecidedYearly) + '/yr</li>');
-  if (W.feesYearly) h.push('<li>Bank fees: ' + planMoney(W.feesYearly) + '/yr</li>');
-  W.habits.slice(0, 3).forEach(function (x) { h.push('<li>' + esc(x.payee) + ': ' + x.n + ' times in 30 days — ' + planMoney(x.yearly) + '/yr</li>'); });
-  W.stillCharging.forEach(function (x) { h.push('<li style="color:#c5221f">' + esc(x.name) + ' charged ' + esc(x.date) + ' after you cancelled it</li>'); });
-  W.priceUp.forEach(function (x) { h.push('<li>' + esc(x.name) + ' went up by ' + x.up + ' ' + esc(x.cur) + '</li>'); });
-  h.push('</ul>');
-  var o = M.outlook;
-  h.push('<p><b>' + esc(pMonthName(M.thisMonth)) + ' plan:</b> expected in ' + planMoney(o.expectedIn) + ', bills ' + planMoney(o.committed) +
-         ', everyday ' + planMoney(o.everyday) + ' → left over ' + planMoney(o.leftOver) + ' (' + planMoney(o.leftAfterHouse) + ' after the house).</p>');
-  h.push(planDigestHtml(M));
-  h.push('</div>');
-  MailApp.sendEmail({ to: notifyAddress(), subject: '📊 ' + pMonthName(M.lastMonth) + ' review — net ' + planMoney(f.net), htmlBody: h.join('\n') });
+    '<p><b>This month:</b> ' + plan.map(function (p) { return esc(p[0]) + ' ' + esc(p[1]); }).join(' · ') + '</p>',
+    planDigestHtml(ss), '</div>'];
+  MailApp.sendEmail({ to: notifyAddress(), subject: '📊 ' + glance[0] + ' review — net ' + glance[5], htmlBody: h.join('\n') });
 }
 
 

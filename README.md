@@ -18,6 +18,7 @@ issues tab so a bad parse is visible rather than silent.
 | `AppScripts/Parser.gs` | statement parsers |
 | `AppScripts/PdfText.gs` | PDF and spreadsheet text extraction via Drive + Docs |
 | `AppScripts/Ledger.gs` | dedup IDs, payee and category labelling, reversal flags |
+| `AppScripts/Formulas.gs` | the Dashboard, Categories, _Calc and Commitments formula columns — the sheet calculates, the script keeps the formulas right |
 | `AppScripts/Plan.gs` | Phase 2: the Dashboard and Commitments tabs — where money goes, what is still to pay, where it is wasted |
 | `AppScripts/appsscript.json` | manifest: runtime, time zone, scopes, Drive service |
 | `.clasp.json` | binds the repo to the Apps Script project |
@@ -42,8 +43,9 @@ link and the dates still missing from the sheet.
 
 Two tabs, both kept up to date without anything to run:
 
-- **Dashboard** — rebuilt after every upload, on the first poll of each day, and
-  whenever the Commitments tab is edited. At a glance, this month's plan, what is
+- **Dashboard** — spreadsheet formulas over Transactions, Commitments and Categories;
+  recalculates live. The script only (re)installs the formulas: after every upload,
+  on the first poll of each day, and after a deploy. At a glance, this month's plan, what is
   still to pay (paid / due / missed / can't tell yet), where money is being wasted
   (undecided recurring costs, cancelled-but-still-charging, price rises, fees,
   habits, lifestyle), where the money goes by group and category, and data health.

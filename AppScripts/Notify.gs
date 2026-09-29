@@ -152,7 +152,9 @@ function sendUploadReminder() {
   // What is due this week, from a freshly rebuilt dashboard (Plan.gs).
   var digest = '';
   try {
-    digest = planDigestHtml(refreshDashboard(ss));
+    refreshDashboard(ss, true);
+    SpreadsheetApp.flush();
+    digest = planDigestHtml(ss);
   } catch (err) {
     planIssue('Due-this-week section of the reminder failed', err);
   }

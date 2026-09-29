@@ -12,6 +12,7 @@
     "AppScripts/Main.gs",
     "AppScripts/Pipeline.gs",
     "AppScripts/Notify.gs",
-    "AppScripts/Plan.gs"
+    "AppScripts/Plan.gs",
+    "AppScripts/Formulas.gs"
   ]
 }
