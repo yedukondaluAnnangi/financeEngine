@@ -103,6 +103,20 @@ var PLAN_SEED = [
 ];
 
 
+/**
+ * Added on 29 Sep 2026 from Notion › Finance › Payments, which the first seed
+ * missed. Appended once to an existing Commitments tab (rows whose Name is
+ * already there are skipped), then never again — deleting one is permanent.
+ */
+var PLAN_ADD_V2 = [
+  ['Rent — India',               '*',     9000,  'INR', 'Monthly', 17,           'HDFC Savings', 'Rent',         'Keep', '', '', 'Paid by PhonePe to the landlord — the bank line has no name, so it is matched on the amount (₹9,000). July was paid ~24th; August is not in the HDFC statement — check PhonePe.'],
+  ['belairdirect car insurance', 'BELAIR', 218,  'CAD', 'Monthly', 7,            '',             'Insurance',    '',     '', '', 'From Notion Payments. Not seen in any statement yet — which account pays it? Put that in Account.'],
+  ['POP sheeting installation',  '*',     70000, 'INR', 'One-off', '2026-09-21', 'HDFC Savings', 'Construction', 'Keep', '', '', 'Due when the sheets go up. Matched on the amount.'],
+  ['Give money to Manvi',        'MANVI', 2000,  'CAD', 'One-off', '',           '',             'Other',        'Keep', '', '', 'From Notion Payments — no date set.'],
+  ['Gold ornament',              'GOLD|JEWEL', 1300, 'CAD', 'One-off', '',       '',             'Shopping',     '',     '', '', 'From Notion Payments — a planned purchase, not a bill. Keep or Cancel?']
+];
+
+
 /* ---------------------------------------------------------------------------
    Pure helpers (no Apps Script services)
    --------------------------------------------------------------------------- */
@@ -248,7 +262,12 @@ function planReadCommitments(values, fx) {
       notes: String(r[11] || '')
     });
   });
-  out.forEach(function (c) { c.income = c.group === 'Income'; });
+  out.forEach(function (c) {
+    c.income = c.group === 'Income';
+    // Match "*": the bank line does not name the payee (PhonePe, autopay
+    // mandates), so match on the amount alone, within 1%.
+    c.anyDesc = c.match === '*';
+  });
   return out;
 }
 
@@ -309,7 +328,11 @@ function planAnalyse(txValues, commitValues, opts) {
     var cands = [];
     tx.forEach(function (t, i) {
       if (c.income ? t.cad <= 0 : t.cad >= 0) return;
-      if (!c.re.test(t.desc + ' | ' + t.payee)) return;
+      if (c.anyDesc) {
+        if (!c.amount || Math.abs(Math.abs(t.amt) - c.amount) > Math.max(1, c.amount * 0.01)) return;
+        // Same amount but already labelled as something else: not this one.
+        if (t.group !== 'Not labelled yet' && t.group !== c.group) return;
+      } else if (!c.re.test(t.desc + ' | ' + t.payee)) return;
       if (c.acct && !planAcctMatches(c.acct, t.acct) && Object.keys(lastByAcct).some(function (a) { return planAcctMatches(c.acct, a); })) return;
       cands.push(i);
     });
@@ -338,12 +361,20 @@ function planAnalyse(txValues, commitValues, opts) {
         return;                                        // before the first statement: nothing to say
       } else {
         var cov = coverage(c.acct);
-        if (cov && cov >= hi) due.state = 'missed';
+        // With no Account, a missing payment may just be on an account that
+        // is not uploaded, so it is never called missed.
+        if (cov && cov >= hi && c.acct) due.state = 'missed';
         else if (pDaysBetween(d, today) <= 5) { due.state = 'due'; if (cov < d) due.coverage = cov; }
         else { due.state = 'unseen'; due.coverage = cov; }
       }
       M.dues.push(due);
     });
+
+    // A one-off with no date: owed until a matching payment shows up.
+    if (/^one-off$/i.test(c.freq) && !c.dueIso && c.decision !== 'Cancel' && !cands.length) {
+      M.dues.push({ name: c.name, date: '', cad: c.cad, amount: c.amount, cur: c.cur, income: c.income,
+                    acct: c.acct, decision: c.decision, freq: c.freq, row: c.row, notes: c.notes, state: 'nodate' });
+    }
   });
   M.dues.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
 
@@ -455,7 +486,11 @@ function planAnalyse(txValues, commitValues, opts) {
   // ---- where you are wasting money ---------------------------------------
   var W = {};
   W.undecided = commits.filter(function (c) { return !c.income && (!c.decision || /^review$/i.test(c.decision)); })
-    .map(function (c) { return { name: c.name, row: c.row, monthly: planMonthly(c), yearly: pR(planMonthly(c) * 12), lastPaid: c.lastPaid ? c.lastPaid.date : '', notes: c.notes }; })
+    .map(function (c) {
+      var oneOff = /^one-off$/i.test(c.freq);
+      return { name: c.name, row: c.row, monthly: oneOff ? '' : planMonthly(c), yearly: oneOff ? c.cad : pR(planMonthly(c) * 12),
+               lastPaid: c.lastPaid ? c.lastPaid.date : '', notes: (oneOff ? 'One-off. ' : '') + c.notes };
+    })
     .sort(function (a, b) { return b.yearly - a.yearly; });
   W.undecidedYearly = pR(W.undecided.reduce(function (s, x) { return s + x.yearly; }, 0));
 
@@ -486,7 +521,7 @@ function planAnalyse(txValues, commitValues, opts) {
   // anything else from the rate seen in the data.
   W.fees = Object.keys(fees).map(function (p) {
     var f = fees[p];
-    var c = commits.filter(function (x) { return x.re.test(f.desc + ' | ' + p); })[0];
+    var c = commits.filter(function (x) { return !x.anyDesc && x.re.test(f.desc + ' | ' + p); })[0];
     f.yearly = c ? pR(planMonthly(c) * 12) : pR(f.cad * 365 / feeDays);
     return f;
   })
@@ -519,7 +554,7 @@ function planAnalyse(txValues, commitValues, opts) {
     if (used[i] || t.cad >= 0) return;
     if (['Moved between your accounts', 'House construction', 'Lent out', 'Essentials', 'Income', 'Not labelled yet'].indexOf(t.group) !== -1) return;
     if (!t.payee || t.payee === 'Needs labelling') return;
-    if (commits.some(function (c) { return c.re.test(t.desc + ' | ' + t.payee); })) return;
+    if (commits.some(function (c) { return !c.anyDesc && c.re.test(t.desc + ' | ' + t.payee); })) return;
     (byPayee[t.payee] = byPayee[t.payee] || []).push(t);
   });
   M.detected = [];
@@ -566,12 +601,14 @@ function planAnalyse(txValues, commitValues, opts) {
    --------------------------------------------------------------------------- */
 
 function planDueStatus(d) {
+  if (d.state === 'nodate')   return '📌 Owed — no date set';
   if (d.state === 'paid')     return (d.income ? '✅ Received ' : '✅ Paid ') + d.paidOn + (d.up ? '  ⚠ ' + d.up + ' more than listed' : '');
   if (d.state === 'upcoming') return d.inDays === 0 ? '⏳ Due today' : '⏳ Due in ' + d.inDays + ' day' + (d.inDays === 1 ? '' : 's');
   if (d.state === 'due')      return (d.income ? '⏳ Expected — not in yet' : '⏳ Due — not seen yet') +
                                      (d.coverage ? ' (' + (d.acct || 'account') + ' data ends ' + d.coverage + ')' : '');
   if (d.state === 'missed')   return d.income ? '🔴 Not received' : '🔴 Not paid (statements cover this date)';
-  return '❔ Can\'t tell yet — ' + (d.acct || 'account') + ' data ends ' + (d.coverage || '—') + ', upload it';
+  if (!d.acct) return '❔ Not seen in any statement — set Account on the Commitments tab';
+  return '❔ Can\'t tell yet — ' + d.acct + ' data ends ' + (d.coverage || '—') + ', upload it';
 }
 
 function planMoney(n) {
@@ -596,6 +633,7 @@ function refreshDashboard(ss, quick) {
   var txVals = tx && tx.getLastRow() > 1 ? tx.getRange(2, 1, tx.getLastRow() - 1, CFG.COLS.length).getValues() : [];
   var today = Utilities.formatDate(new Date(), CFG_TZ(), 'yyyy-MM-dd');
 
+  if (!quick) planAddOnce(commitSh, 'plan_seed_v2', PLAN_ADD_V2);
   var cv = planCommitValues(commitSh);
   var M = planAnalyse(txVals, cv, { today: today, fx: CFG.FX_TO_CAD });
 
@@ -612,6 +650,17 @@ function refreshDashboard(ss, quick) {
   return M;
 }
 
+/** Append rows to Commitments once per key, skipping names already on the tab. */
+function planAddOnce(sh, key, rows) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(key)) return;
+  var have = {};
+  planCommitValues(sh).forEach(function (r) { have[String(r[0]).trim().toLowerCase()] = true; });
+  var add = rows.filter(function (r) { return !have[String(r[0]).trim().toLowerCase()]; });
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, PLAN.COMMIT_COLS.length).setValues(add);
+  props.setProperty(key, new Date().toISOString());
+}
+
 function planCommitValues(sh) {
   var last = sh.getLastRow();
   return last > 1 ? sh.getRange(2, 1, last - 1, PLAN.COMMIT_COLS.length).getValues() : [];
@@ -624,7 +673,8 @@ function planCommitmentsTab(ss) {
   sh = ss.insertSheet(PLAN.TAB_COMMIT);
   sh.getRange(1, 1, 1, PLAN.COMMIT_COLS.length).setValues([PLAN.COMMIT_COLS])
     .setFontWeight('bold').setBackground('#f1f3f4');
-  sh.getRange(2, 1, PLAN_SEED.length, PLAN.COMMIT_COLS.length).setValues(PLAN_SEED);
+  var seed = PLAN_SEED.concat(PLAN_ADD_V2);
+  sh.getRange(2, 1, seed.length, PLAN.COMMIT_COLS.length).setValues(seed);
   sh.setFrozenRows(1);
   sh.getRange('B:B').setNumberFormat('@');
   var rows = sh.getMaxRows() - 1;
@@ -711,7 +761,7 @@ function planRender(ss, M) {
   var prevStart = pMonthAdd(M.thisMonth, -1) + '-01';
   var open = M.dues.filter(function (d) {
     return d.state !== 'paid' && d.decision !== 'Cancel' &&
-           (d.date >= monthStart || (d.date >= prevStart && (d.state === 'missed' || d.state === 'unseen')));
+           (d.state === 'nodate' || d.date >= monthStart || (d.date >= prevStart && (d.state === 'missed' || d.state === 'unseen')));
   });
   if (!open.length) row(['Nothing outstanding.']);
   open.forEach(function (d) {
@@ -885,7 +935,7 @@ function planDashUrl(ss) {
 function planDigestHtml(M) {
   var soon = M.dues.filter(function (d) {
     return d.state !== 'paid' && d.decision !== 'Cancel' &&
-           (d.state === 'missed' || d.state === 'due' || (d.state === 'upcoming' && d.inDays <= 7));
+           ((d.state === 'missed' && d.date >= pAddDays(M.today, -14)) || d.state === 'due' || (d.state === 'upcoming' && d.inDays <= 7));
   });
   var h = ['<h3 style="margin:18px 0 6px">🧾 Money due this week</h3>'];
   if (!soon.length) h.push('<p>Nothing due in the next 7 days.</p>');
