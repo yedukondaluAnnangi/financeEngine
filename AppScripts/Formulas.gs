@@ -239,6 +239,13 @@ function fxCommitFormulas(sh, rows) {
 /* ---- Dashboard --------------------------------------------------------------- */
 
 var FX_M0 = 'TEXT(TODAY(),"yyyy-mm")';
+// The order groups appear in, matching PLAN.GROUP_ORDER.
+function fxOrder() { return '{"' + PLAN.GROUP_ORDER.join('";"') + '"}'; }
+/** A QUERY result with its header row kept on top and the rest sorted by group order, then by column 2. */
+function fxSortedQuery(q) {
+  return 'LET(q,' + q + ',b,CHOOSEROWS(q,SEQUENCE(ROWS(q)-1,1,2)),' +
+         'VSTACK(CHOOSEROWS(q,1),SORT(b,IFERROR(MATCH(INDEX(b,,1),' + fxOrder() + ',0),99),TRUE,INDEX(b,,2),TRUE)))';
+}
 var FX_M1 = 'TEXT(EDATE(TODAY(),-1),"yyyy-mm")';
 var CM = 'Commitments!';
 
@@ -305,8 +312,8 @@ function fxDashboardCells() {
   // key 0 = needs you (missed, charged after cancel), 1 = due now / owed, 2 = just upcoming.
   var key = 'IF(REGEXMATCH(' + CM + 'T2:T,"^(🔴|⚠)"),0,IF(REGEXMATCH(' + CM + 'T2:T,"^(⏳|📌)"),1,2))';
   var when = 'IF(' + key + '<2,IF(' + CM + 'R2:R="",' + CM + 'S2:S,' + CM + 'R2:R),' + CM + 'S2:S)';
-  var what = 'IF(' + key + '<2,' + CM + 'T2:T,"🗓 in "&' + CM + 'Z2:Z&" days"&' +
-             'IF(LEFT(' + CM + 'T2:T,1)="✅"," · last "&LOWER(MID(' + CM + 'T2:T,3,99)),' +
+  var what = 'IF(' + key + '<2,' + CM + 'T2:T,"🗓 "&IF(' + CM + 'Z2:Z=0,"today",IF(' + CM + 'Z2:Z=1,"tomorrow","in "&' + CM + 'Z2:Z&" days"))&' +
+             'IF(LEFT(' + CM + 'T2:T,1)="✅"," · last "&SUBSTITUTE(SUBSTITUTE(' + CM + 'T2:T,"✅ Paid ","paid "),"✅ Received ","received "),' +
              'IF(LEFT(' + CM + 'T2:T,1)="❔"," · last cycle unconfirmed","")))';
   put(23, 1, '=IFERROR(ARRAY_CONSTRAIN(CHOOSECOLS(SORT(FILTER(ARRAYFORMULA({' + when + ',' + CM + 'A2:A,' + CM + 'M2:M,' +
              CM + 'C2:C&" "&' + CM + 'D2:D,' + what + ',' + CM + 'Z2:Z,' + CM + 'G2:G,' + CM + 'L2:L,' + key + '}),' +
@@ -376,10 +383,10 @@ function fxDashboardCells() {
   // Where the money goes: live pivots over the last four months.
   var from4 = 'TEXT(EDATE(TODAY(),-3),"yyyy-mm")';
   title(136, '📊 Where your money goes — by group (CAD, money out positive)');
-  put(137, 1, '=IFERROR(ARRAY_CONSTRAIN(QUERY(_Calc!A1:M,"select K, sum(L) where J <> \'Moved\' and B >= \'"&' + from4 + '&"\' group by K pivot B",1),16,6),"No data")');
+  put(137, 1, '=IFERROR(ARRAY_CONSTRAIN(' + fxSortedQuery('QUERY(_Calc!A1:M,"select K, sum(L) where J <> \'Moved\' and B >= \'"&' + from4 + '&"\' group by K pivot B",1)') + ',16,6),"No data")');
   styles.money.push([138, 2, 15, 5]);
   title(155, '📊 By category');
-  put(156, 1, '=IFERROR(ARRAY_CONSTRAIN(QUERY(_Calc!A1:M,"select K, I, sum(L) where J <> \'Moved\' and B >= \'"&' + from4 + '&"\' group by K, I pivot B",1),70,7),"No data")');
+  put(156, 1, '=IFERROR(ARRAY_CONSTRAIN(' + fxSortedQuery('QUERY(_Calc!A1:M,"select K, I, sum(L) where J <> \'Moved\' and B >= \'"&' + from4 + '&"\' group by K, I pivot B",1)') + ',70,7),"No data")');
   styles.money.push([157, 3, 69, 5]);
   put(227, 1, 'Card payments, own transfers and money sent to India count as "Moved" (Categories tab) and are left out of every total.', 'note');
 
