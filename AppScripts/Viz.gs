@@ -22,6 +22,7 @@ var VZ = {
   TAB_OVERVIEW: 'Overview',
   TAB_TRENDS: 'Trends',
   TAB_ACCOUNTS: 'Accounts',
+  TAB_LABEL: 'To label',
   MONTHS: 12,                    // the most months any chart or table shows
   CAT_ROWS: 96,                  // Trends: room for this many categories
   ACCT_ROWS: 20,                 // Accounts: room for this many accounts
@@ -372,12 +373,54 @@ function vzAccountsTab(ss) {
 }
 
 
+/* ---- To label: transactions no Payees pattern matched ---------------------------- */
+
+function vzToLabelTab(ss) {
+  var sh = getTab(ss, VZ.TAB_LABEL) || ss.insertSheet(VZ.TAB_LABEL);
+  sh.clear();
+  thClearBands(sh);
+  thPage(sh, 12);
+  // The bank text without the " | Needs labelling" payee _Calc appends.
+  var desc = 'ARRAYFORMULA(REGEXREPLACE(_Calc!D2:D," [|] [^|]*$",""))';
+  sh.getRange('A1').setValue('🏷 To label — transactions with no category yet');
+  sh.getRange('A2').setValue('No row on the Payees tab matched these bank descriptions, so they have no category and count as plain living costs. ' +
+    'Fix: add a Payees row (PATTERN = a word from the description, PAYEE, DEFAULT CATEGORY), then Finance › Re-label unlabelled rows.')
+    .setFontColor(TH.GREY).setWrap(false);
+  sh.getRange('A3').setFormula('=COUNTIF(_Calc!K2:K,"Not labelled yet")&" transaction(s) · "&TEXT(-SUMIFS(_Calc!H2:H,_Calc!K2:K,"Not labelled yet"),"$#,##0.00;-$#,##0.00")&" net out (CAD)"')
+    .setFontWeight('bold').setFontColor(TH.NAVY);
+
+  sh.getRange('A5').setValue('Same text, grouped — one Payees row fixes each line');
+  sh.getRange('A5:E5').setBackground(TH.SECTION).setFontColor('#ffffff').setFontWeight('bold');
+  sh.getRange('A6').setFormula('=IFERROR(QUERY({' + desc + ',_Calc!C2:C,_Calc!H2:H,_Calc!A2:A,_Calc!K2:K},' +
+    '"select Col1, Col2, count(Col3), sum(Col3), max(Col4) where Col5 = \'Not labelled yet\' group by Col1, Col2 order by count(Col3) desc, sum(Col3) asc ' +
+    'label Col1 \'Description\', Col2 \'Account\', count(Col3) \'Times\', sum(Col3) \'Total (CAD)\', max(Col4) \'Last seen\'",0),"✅ Nothing to label")');
+  sh.getRange('G5').setValue('Every one, newest first');
+  sh.getRange('G5:L5').setBackground(TH.SECTION).setFontColor('#ffffff').setFontWeight('bold');
+  sh.getRange('G6:L6').setValues([['Date', 'Account', 'Description', 'Amount', 'Currency', 'CAD']]);
+  thColHead(sh.getRange('G6:L6'));
+  sh.getRange('G7').setFormula('=IFERROR(SORT(FILTER({_Calc!A2:A,_Calc!C2:C,' + desc + ',_Calc!F2:F,_Calc!G2:G,_Calc!H2:H},' +
+    '_Calc!K2:K="Not labelled yet"),1,FALSE),"")');
+  thColHead(sh.getRange('A6:E6'));
+  thBand(sh.getRange(7, 1, 200, 5), false);
+  thBand(sh.getRange(7, 7, 200, 6), false);
+  sh.getRange('C7:C206').setNumberFormat('0');
+  sh.getRange('D7:D206').setNumberFormat('$#,##0.00;[Red]-$#,##0.00');
+  sh.getRange('E7:E206').setNumberFormat('yyyy-mm-dd');
+  sh.getRange('G7:G206').setNumberFormat('yyyy-mm-dd');
+  sh.getRange('J7:J206').setNumberFormat('#,##0.00');
+  sh.getRange('L7:L206').setNumberFormat('$#,##0.00;[Red]-$#,##0.00');
+  [330, 190, 60, 110, 100, 20, 95, 190, 330, 100, 70, 100].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  sh.setFrozenRows(6);
+  return sh;
+}
+
+
 /* ---- putting it together -------------------------------------------------------- */
 
 /** Tabs in the order you use them; filter row on Transactions. */
 function vzArrange(ss) {
   [VZ.TAB_OVERVIEW, BS.TAB_VIEW, PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, VZ.TAB_TRENDS, VZ.TAB_ACCOUNTS,
-   BS.TAB_INPUT, CFG.TAB_PAYEES, FX.CATS]
+   BS.TAB_INPUT, VZ.TAB_LABEL, CFG.TAB_PAYEES, FX.CATS]
     .forEach(function (name, i) {
       var sh = getTab(ss, name);
       if (!sh) return;
@@ -397,6 +440,7 @@ function vzInstall(ss) {
   vzTrendsTab(ss);
   vzAccountsTab(ss);
   bsInstall(ss);
+  vzToLabelTab(ss);
   thPayees(ss);
   thCategories(ss);
   vzOverviewLinks(ss);
