@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-18.3',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-18.4',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -653,6 +653,7 @@ function refreshDashboard(ss, quick) {
     planAddOnce(commitSh, 'plan_seed_v3', PLAN_ADD_V3);
     planTidyTabs(ss);
     planPayeesOnce(ss);
+    planPayeesV2Once(ss);
     planPayWeeklyOnce(commitSh);
   }
   // The script still reads the data for two jobs a formula cannot do:
@@ -737,6 +738,66 @@ function planPayWeeklyOnce(sh) {
     sh.getRange(row, 12).setValue(PLAN_PAY_NOTE);              // Notes
   });
   props.setProperty('plan_pay_weekly_v1', new Date().toISOString());
+}
+
+/**
+ * Once (18 Oct): Payees rows for the bank lines the 17 Oct upload left
+ * unlabelled — own transfers and card payments (so they count as Moved, not
+ * spending), Remitly arrivals in HDFC, fees, ATM cash, benefits and everyday
+ * merchants. Only lines whose meaning is clear from the text; lines that need
+ * the owner's judgement (e-transfers sent from TD, UPI payments to people)
+ * are left for the To label tab. Appended at the bottom: none of these lines
+ * matched an existing row, so no earlier row is shadowed. Then labels the rows
+ * still unlabelled; hand-set labels are never touched.
+ */
+var PLAN_PAYEES_V2 = [
+  ['TFR-(TO|FR) 5022366',                          'TD ↔ own account 5022366',      'Transfer'],
+  ['E-TRANSFER SENT CIBC KONDAL',                  'RBC → own CIBC',                'Transfer'],
+  ['E-TRANSFER \\d+ YEDUKONDALU ANNANGI',           'From own account',              'Transfer'],
+  ['PREAUTHORIZED DEBIT NEO FINANCIAL|MISC PAYMENT NEO FINANCIAL', 'Neo card payment', 'Creditcard'],
+  ['PAYMENT THANK YOU',                            'Card payment received',         'Creditcard'],
+  ['AUTOPAY THANK YOU',                            'HDFC card autopay',             'Creditcard'],
+  ['RDA FIR INW',                                  'Remitly arrival from Canada',   'Transfer to India'],
+  ['^HL \\d+ DEBIT',                               'HDFC home loan EMI',            'Loan'],
+  ['NEFT DR-.*VIJAYAKUMARI',                       'Rent — India',                  'Rent'],
+  ['^ATW-',                                        'ATM cash (India)',              'Cash'],
+  ['BHARAT CONNECT UTIL',                          'Bill payment (Bharat Connect)', 'Utilities'],
+  ['ACH DEBIT RETURN CHARGES',                     'HDFC bounce charge',            'Bank fees'],
+  ['CASH ADV/BT/CONV CHQ FEE|CASH INTEREST|FINANCE CHARGES|OVERDRAFT INTEREST', 'Card / overdraft charges', 'Bank fees'],
+  ['INTEREST PAID TILL',                           'HDFC savings interest',         'Interest'],
+  ['DEPOSIT BENEFIT ESSENTIELS|WORKERS BEN',       'Government benefit',            'Government benefit'],
+  ['COSTCO',                                       'Costco',                        'Groceries'],
+  ['RCSS|SUPERSTORE',                              'Real Canadian Superstore',      'Groceries'],
+  ['BLUESKY SUPERMARKET',                          'Bluesky Supermarket',           'Groceries'],
+  ['MOM\'S KITCHEN',                               'Mom\'s Kitchen',                'Eating out'],
+  ['DESSERTO',                                     'Desserto',                      'Eating out'],
+  ['M2 CAKE',                                      'M2 Cake',                       'Eating out'],
+  ['AAHA',                                         'Aaha Truly South',              'Eating out'],
+  ['JIMMY THE GREEK',                              'Jimmy the Greek',               'Eating out'],
+  ['MCDONALD',                                     'McDonald\'s',                   'Eating out'],
+  ['407ETR',                                       '407 ETR (tolls)',               'Transit'],
+  ['INTERAC TRANSIT|PRESTO',                       'Presto',                        'Transit'],
+  ['\\bLYFT\\b',                                   'Lyft',                          'Transit'],
+  ['MACEWEN',                                      'MacEwen (gas)',                 'Fuel'],
+  ['PIONEER',                                      'Pioneer (gas)',                 'Fuel'],
+  ['INS MARKET|BECKER',                            'Convenience store',             'Convenience'],
+  ['STAPLES',                                      'Staples',                       'Shopping']
+];
+
+function planPayeesV2Once(ss) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('plan_payees_v2')) return;
+  var sh = getTab(ss, CFG.TAB_PAYEES);
+  if (!sh) return;
+  var have = {};
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function (r) { have[String(r[0]).trim()] = true; });
+  var add = PLAN_PAYEES_V2.filter(function (p) { return !have[p[0]]; }).map(function (p) { return [p[0], p[1], p[2], '']; });
+  if (add.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, add.length, 4).setNumberFormat('@').setValues(add);
+    SpreadsheetApp.flush();
+  }
+  relabelAll();
+  props.setProperty('plan_payees_v2', new Date().toISOString());
 }
 
 /** Append rows to Commitments once per key, skipping names already on the tab. */
