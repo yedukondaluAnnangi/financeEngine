@@ -415,6 +415,22 @@ function vzToLabelTab(ss) {
 }
 
 
+/**
+ * Hidden _Peek: the To label groups laid out across row 1, one per cell, so a
+ * reader that only samples the first rows of each tab (the Drive connector)
+ * can see them all. Read-only helper; nothing depends on it.
+ */
+function vzPeekTab(ss) {
+  var sh = getTab(ss, '_Peek') || ss.insertSheet('_Peek');
+  sh.clear();
+  var desc = 'ARRAYFORMULA(REGEXREPLACE(_Calc!D2:D," [|] [^|]*$",""))';
+  sh.getRange('A1').setFormula('=IFERROR(TRANSPOSE(BYROW(QUERY({' + desc + ',_Calc!C2:C,_Calc!H2:H,_Calc!K2:K,_Calc!B2:B},' +
+    '"select Col1, Col2, count(Col3), sum(Col3), min(Col5), max(Col5) where Col4 = 'Not labelled yet' group by Col1, Col2 order by sum(Col3) asc label count(Col3) '', sum(Col3) '', min(Col5) '', max(Col5) ''",0),' +
+    'LAMBDA(r,LEFT(INDEX(r,1,1),48)&" ¦ "&LEFT(INDEX(r,1,2),12)&" ¦ x"&INDEX(r,1,3)&" ¦ "&ROUND(INDEX(r,1,4),2)&" ¦ "&INDEX(r,1,5)&".."&INDEX(r,1,6)))),"none")');
+  if (!sh.isSheetHidden()) sh.hideSheet();
+}
+
+
 /* ---- putting it together -------------------------------------------------------- */
 
 /** Tabs in the order you use them; filter row on Transactions. */
@@ -441,6 +457,7 @@ function vzInstall(ss) {
   vzAccountsTab(ss);
   bsInstall(ss);
   vzToLabelTab(ss);
+  vzPeekTab(ss);
   thPayees(ss);
   thCategories(ss);
   vzOverviewLinks(ss);
