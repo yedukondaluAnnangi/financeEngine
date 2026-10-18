@@ -58,8 +58,8 @@ function vzVizTab(ss) {
   sh.getRange('A1:I1').setValues([['Month', 'Month ', 'Money in (after HST)', 'Living costs', 'House construction',
                                    'Lent / saved', 'Net', 'Spent in Canada (CAD)', 'Spent in India (CAD)']]);
   // From the first month with data up to this month, at most VZ.MONTHS of them.
-  sh.getRange('A2').setFormula('=ARRAYFORMULA(LET(t,DATE(YEAR(TODAY()),MONTH(TODAY()),1),m0,MIN(_Calc!A2:A),' +
-    'f,IF(m0=0,t,DATE(YEAR(m0),MONTH(m0),1)),n,MAX(1,MIN(' + VZ.MONTHS + ',DATEDIF(f,t,"M")+1)),' +
+  sh.getRange('A2').setFormula('=ARRAYFORMULA(LET(t,DATE(YEAR(TODAY()),MONTH(TODAY()),1),lo,MIN(_Calc!A2:A),' +
+    'f,IF(lo=0,t,DATE(YEAR(lo),MONTH(lo),1)),n,MAX(1,MIN(' + VZ.MONTHS + ',DATEDIF(f,t,"M")+1)),' +
     'd,DATE(YEAR(t),MONTH(t)+SEQUENCE(n,1,1-n),1),HSTACK(TEXT(d,"yyyy-mm"),TEXT(d,"mmm yy"))))');
   sh.getRange('C2').setFormula('=' + m + sumJ('Income') + '-SUMIFS(_Calc!$H:$H,_Calc!$I:$I,"Business income",_Calc!$B:$B,$A2:$A13)*' +
                                VZ_HST + '/(1+' + VZ_HST + ')))');
