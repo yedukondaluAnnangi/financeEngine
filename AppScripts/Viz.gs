@@ -562,6 +562,8 @@ function vzPeekTab(ss) {
     '"select Col1, Col2, count(Col3), sum(Col3), min(Col5), max(Col5) where Col4 = \'Not labelled yet\' group by Col1, Col2 order by sum(Col3) asc ' +
     'label count(Col3) \'\', sum(Col3) \'\', min(Col5) \'\', max(Col5) \'\'",0),' +
     'LAMBDA(r,LEFT(INDEX(r,1,1),48)&" ¦ "&LEFT(INDEX(r,1,2),12)&" ¦ x"&INDEX(r,1,3)&" ¦ "&ROUND(INDEX(r,1,4),2)&" ¦ "&INDEX(r,1,5)&".."&INDEX(r,1,6)))),"none")');
+  // Row 3: the newest _Issues note, cut into 80-character pieces so the whole stack is readable.
+  sh.getRange('A3').setFormula('=IFERROR(ARRAYFORMULA(MID(INDEX(_Issues!F:F,COUNTA(_Issues!A:A)),SEQUENCE(1,12,1,80),80)),"")');
   // Row 2: the first rows of each Overview detail list, flattened, for the same reason.
   sh.getRange('A2').setFormula('=IFERROR(TOROW(VSTACK(Overview!A74:D79,Overview!G74:J78,Overview!A85:D89,Overview!G85:J89,' +
     'Overview!A105:D109,Overview!G105:J109,Overview!A100:D100,Overview!A130:D130)),"peek failed")');
