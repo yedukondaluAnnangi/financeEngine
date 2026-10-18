@@ -229,6 +229,58 @@ function parseHdfcCard(text, period) {
 }
 
 /* ===========================================================================
+   HDFC Regalia credit card — the XLS billed statement
+
+   Below a block of address and summary lines sits one header row:
+     Transaction type | Customer Name | Date & Time | Description | REWARDS | AMT | Debit / Credit
+   Each column is a merged range, so the columns are found by header text,
+   never by position. Dates read "27/08/2026 / 18:57", day first. AMT is
+   unsigned; "Cr" in the last column marks a credit, a blank one a charge.
+   REWARDS ("+ 39") is points, not money, and is ignored — the trap the PDF
+   parser has to work around does not exist here.
+   The table ends at the first row without a date (the reward points summary).
+   Verified on the Sep 2026 file: 12 rows, purchases -8,798.68, credits
+   +12,509.00 — the statement's own summary figures.
+   =========================================================================== */
+
+function parseHdfcCardRows(rows, period) {
+  var head = -1, col = {};
+  for (var h = 0; h < Math.min(rows.length, 60) && head < 0; h++) {
+    var hdr = rows[h].map(function (c) { return String(c || '').trim().toLowerCase(); });
+    if (hdr.indexOf('date & time') === -1 || hdr.indexOf('description') === -1) continue;
+    head = h;
+    col = { date: hdr.indexOf('date & time'), desc: hdr.indexOf('description'),
+            amt: hdr.indexOf('amt'), dc: hdr.indexOf('debit / credit') };
+  }
+  if (head < 0 || col.amt < 0) throw new Error('HDFC card: could not find the "Date & Time … AMT" header row.');
+
+  var out = [];
+  for (var i = head + 1; i < rows.length; i++) {
+    var r = rows[i], raw = r[col.date], d = null;
+    if (raw instanceof Date) {
+      d = new Date(Date.UTC(raw.getFullYear(), raw.getMonth(), raw.getDate()));
+    } else {
+      var m = String(raw || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (m) d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
+    }
+    if (!d) break;                                    // end of the transaction table
+
+    var amt = cellNum(r[col.amt]);
+    if (!amt) continue;
+    var isCredit = col.dc >= 0 && /^cr$/i.test(String(r[col.dc] || '').trim());
+
+    out.push({
+      date: d,
+      desc: squash(r[col.desc]) || '(no description)',
+      amount: round2(isCredit ? Math.abs(amt) : -Math.abs(amt)),
+      balance: null,
+      warn: null
+    });
+  }
+  return out;
+}
+
+/* ===========================================================================
    HDFC savings — the Excel or Delimited download
 
    Columns, in order:

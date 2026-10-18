@@ -59,15 +59,18 @@ var CFG = {
     CIBC_680 : { accepts: ['csv'], cadence: 'any-date',
                  login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
                  howTo: 'Account ••680 › Download transactions › CSV. Rename so the name ends in 680.csv.' },
+    CIBC_CARD: { accepts: ['csv'], cadence: 'any-date',
+                 login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
+                 howTo: 'Credit card ••4181 › Download transactions › CSV. Any file name — the card number inside identifies it.' },
     TD_BUS   : { accepts: ['csv'], cadence: 'any-date',
                  login: 'https://easyweb.td.com/',
                  howTo: 'Business Chequing › Download › CSV. Keep "accountactivity.csv".' },
     HDFC_SAV : { accepts: ['xls', 'xlsx', 'csv', 'txt'], cadence: 'any-date',
                  login: 'https://netbanking.hdfcbank.com/netbanking/',
                  howTo: 'Savings ••7203 › Account Statement › choose XLS (not PDF — it is password-protected).' },
-    HDFC_CARD: { accepts: ['pdf'], cadence: 'statement',
+    HDFC_CARD: { accepts: ['pdf', 'xls', 'xlsx'], cadence: 'statement',
                  login: 'https://netbanking.hdfcbank.com/netbanking/',
-                 howTo: 'Cards › Regalia ••4351 › Billed statement › PDF.' }
+                 howTo: 'Cards › Regalia ••4351 › Billed statement › XLS (or PDF).' }
   },
 
   // ---- FX ----------------------------------------------------------------
@@ -90,6 +93,10 @@ var CFG = {
    *   parser     reads the text of a PDF
    *   rowParser  reads the rows of a spreadsheet or CSV
    *
+   * A rule matches by `test` (text anywhere in the file, file name included),
+   * `file` (a regex on the file name only), or `cell` (a regex one whole
+   * spreadsheet cell must match — for when the text also turns up elsewhere).
+   *
    * An account can have either or both. HDFC savings has both because the
    * PDF is password-protected and the spreadsheet is not — see the note
    * under HDFC_SAV below.
@@ -102,7 +109,13 @@ var CFG = {
     // TD CSV has no bank name inside, so it is matched by TD's default file name.
     { test: 'accountactivity',        key: 'TD_BUS',    name: 'TD Business Chequing',   currency: 'CAD', rowParser: 'parseTdRows' },
 
-    // CIBC CSVs carry no account number, and each account's file names the
+    // CIBC credit card CSV: Date | Description | Debit | Credit | Card number.
+    // The masked card number fills a cell of its own on every row. The
+    // chequing download mentions the same number inside its "TO CARD"
+    // transfer text, so it is matched as a whole cell, never as text.
+    { cell: /^4505\*+4181$/,          key: 'CIBC_CARD', name: 'CIBC Credit Card ••4181', currency: 'CAD', rowParser: 'parseCibcRows' },
+
+    // CIBC chequing CSVs carry no account number, and each account's file names the
     // other one in its transfer lines, so only the file name can tell them
     // apart. Rename the download to end in 096.csv or 680.csv.
     { file: /096\.csv$/i,             key: 'CIBC_CHQ',  name: 'CIBC Chequing 73-83096', currency: 'CAD', rowParser: 'parseCibcRows' },
@@ -127,8 +140,8 @@ var CFG = {
     { test: 'Statementofaccount',     key: 'HDFC_SAV',  name: 'HDFC Savings ••7203',    currency: 'INR', parser: 'parseHdfcSavings', rowParser: 'parseHdfcSavingsRows' },
     { test: 'Statement of account',   key: 'HDFC_SAV',  name: 'HDFC Savings ••7203',    currency: 'INR', parser: 'parseHdfcSavings', rowParser: 'parseHdfcSavingsRows' },
 
-    { test: 'Regalia',                key: 'HDFC_CARD', name: 'HDFC Regalia ••4351',    currency: 'INR', parser: 'parseHdfcCard' },
-    { test: '4351',                   key: 'HDFC_CARD', name: 'HDFC Regalia ••4351',    currency: 'INR', parser: 'parseHdfcCard' }
+    { test: 'Regalia',                key: 'HDFC_CARD', name: 'HDFC Regalia ••4351',    currency: 'INR', parser: 'parseHdfcCard', rowParser: 'parseHdfcCardRows' },
+    { test: '4351',                   key: 'HDFC_CARD', name: 'HDFC Regalia ••4351',    currency: 'INR', parser: 'parseHdfcCard', rowParser: 'parseHdfcCardRows' }
   ],
 
   MONTHS : {JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}

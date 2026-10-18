@@ -77,6 +77,9 @@ var PLAN = {
   REVIEW_BY_DAY  : 7      // monthly review goes out on the first poll of days 1..7
 };
 
+var PLAN_PAY_NOTE = '37.5 h × $84.51, every Friday into TD. Each deposit is $3,581.12 = this plus $411.99 HST, ' +
+  'owed to CRA and not counted here. The 16 Sep deposit ($7,162.24) was two weeks at once.';
+
 /**
  * First-run contents of the Commitments tab: the Month Ahead recurring list
  * plus the fees, bills and income visible in the Aug–Sep 2026 statements.
@@ -87,7 +90,7 @@ var PLAN = {
  */
 var PLAN_SEED = [
   // Name, Match, Amount, Currency, Frequency, Due, Account, Category, Decision, Decided on, Ends, Notes
-  ['Insight Global pay',        'INSIGHT GLOBAL',               6338.26, 'CAD', 'Biweekly', '2026-09-16', 'TD',          'Income',       'Keep',   '', '', '2 weeks × 37.5 h × $84.51. The 16 Sep deposit ($7,162.24) also carried 2 × $411.99 HST, owed to CRA and not counted here. If pay is weekly, set Frequency Weekly, Due Wednesday, Amount 3169.13.'],
+  ['Insight Global pay',        'INSIGHT GLOBAL',               3169.13, 'CAD', 'Weekly',  'Friday',     'TD',          'Income',       'Keep',   '', '', PLAN_PAY_NOTE],
   ['Ontario Trillium Benefit',  'Trillium',                     62.33,   'CAD', 'Monthly', 10,          'CIBC',         'Income',       'Keep',   '', '', ''],
   ['Rent — Swapna',             'SWAPNA',                       1600,    'CAD', 'Monthly', 1,           'RBC',          'Rent',         'Keep',   '', '', ''],
   ['Kotak Mahindra loan EMI',   'Kotak',                        39388.3, 'INR', 'Monthly', 5,           'HDFC Savings', 'Loan',         'Keep',   '', '2027-09-01', 'Do not prepay — runs out 1 Sep 2027, frees ~$580/month.'],
@@ -650,6 +653,7 @@ function refreshDashboard(ss, quick) {
     planAddOnce(commitSh, 'plan_seed_v3', PLAN_ADD_V3);
     planTidyTabs(ss);
     planPayeesOnce(ss);
+    planPayWeeklyOnce(commitSh);
   }
   // The script still reads the data for two jobs a formula cannot do:
   // dating a new decision, and spotting a new recurring charge.
@@ -714,6 +718,25 @@ function planPayeesOnce(ss) {
     }
   }
   props.setProperty('plan_payees_v1', new Date().toISOString());
+}
+
+/**
+ * Once: Insight Global pays weekly, not every two weeks. The TD download
+ * shows $3,581.12 every Friday from 25 Sep; the $7,162.24 on 16 Sep was two
+ * weeks paid together, which is what made it look biweekly. Only a row still
+ * on the old seed (Biweekly) is changed, so a hand edit is never overwritten.
+ */
+function planPayWeeklyOnce(sh) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('plan_pay_weekly_v1')) return;
+  planCommitValues(sh).forEach(function (r, i) {
+    if (String(r[0]).trim() !== 'Insight Global pay' || String(r[4]).trim() !== 'Biweekly') return;
+    var row = i + 2;
+    sh.getRange(row, 3).setValue(3169.13);                     // Amount
+    sh.getRange(row, 5, 1, 2).setValues([['Weekly', 'Friday']]); // Frequency, Due
+    sh.getRange(row, 12).setValue(PLAN_PAY_NOTE);              // Notes
+  });
+  props.setProperty('plan_pay_weekly_v1', new Date().toISOString());
 }
 
 /** Append rows to Commitments once per key, skipping names already on the tab. */

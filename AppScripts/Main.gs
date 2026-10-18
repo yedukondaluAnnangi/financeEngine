@@ -56,7 +56,11 @@ function ingestInbox() {
 function parseRows(rows, fileName) {
   if (!rows || !rows.length) throw new Error('The spreadsheet came back empty.');
   var text = fileName + '\n' + rowsToText(rows);
-  var acct = detectAccount(text, fileName);
+  var acct = detectAccount(text, fileName, rows);
+  if (!acct && looksLikeCibcChequing(rows)) {
+    throw new Error('This is a CIBC chequing download, and CIBC files carry no account number. Rename it so the ' +
+                    'name ends in 096.csv (Chequing 73-83096) or 680.csv (••680), then upload it again.');
+  }
   if (!acct) throw new Error('Could not tell which account this is. Add a fingerprint to CFG.ACCOUNTS.');
   if (!acct.rowParser) {
     throw new Error(acct.name + ' has no spreadsheet parser — supply the PDF, or add a rowParser.');
@@ -66,6 +70,14 @@ function parseRows(rows, fileName) {
   // specific account.
   if (acct.resolver) acct = globalThis[acct.resolver](fileName, acct);
   return { acct: acct, recs: globalThis[acct.rowParser](rows, findPeriod(text)) };
+}
+
+/** CIBC's chequing CSV shape: no header, Date (YYYY-MM-DD) | Description | Debit | Credit. */
+function looksLikeCibcChequing(rows) {
+  var data = rows.filter(function (r) { return r && r.length > 1; });
+  return data.length > 0 && data.every(function (r) {
+    return r.length === 4 && /^\d{4}-\d{2}-\d{2}$/.test(String(r[0] || '').trim());
+  });
 }
 
 /** PDF -> { acct, recs }. */

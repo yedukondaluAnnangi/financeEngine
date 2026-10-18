@@ -268,15 +268,23 @@ function mkPeriod(d1, mon1, y1, d2, mon2, y2) {
 
 /**
  * A rule with `file` (a regex) is matched against the file name only, and is
- * skipped when there is no file name (a PDF). A rule with `test` is matched
- * against the text, which for a spreadsheet includes the file name.
+ * skipped when there is no file name (a PDF). A rule with `cell` (a regex) is
+ * matched against each spreadsheet cell on its own, and is skipped when there
+ * are no rows (a PDF). A rule with `test` is matched against the text, which
+ * for a spreadsheet includes the file name.
  */
-function detectAccount(text, fileName) {
+function detectAccount(text, fileName, rows) {
   var s = squash(text), g = deSpace(text);
   for (var i = 0; i < CFG.ACCOUNTS.length; i++) {
     var a = CFG.ACCOUNTS[i];
     if (a.file) {
       if (fileName && a.file.test(fileName)) return a;
+      continue;
+    }
+    if (a.cell) {
+      if (rows && rows.some(function (r) {
+        return r.some(function (c) { return a.cell.test(String(c === null || c === undefined ? '' : c).trim()); });
+      })) return a;
       continue;
     }
     if (s.indexOf(a.test) !== -1 || g.indexOf(deSpace(a.test)) !== -1) return a;
