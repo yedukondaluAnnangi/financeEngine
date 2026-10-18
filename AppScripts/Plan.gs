@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-18.4',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-18.5',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -49,6 +49,8 @@ var PLAN = {
   GROUPS: [
     [/^(creditcard|transfer|transfer to india|owner draw|reversal)$/i, 'Moved between your accounts'],
     [/^investment/i,                                                     'Saved / invested'],
+    // Money turned into something you own (a car), not spent.
+    [/^(car purchase|vehicle purchase)$/i,                               'Saved / invested'],
     [/^construction/i,                                                   'House construction'],
     // Money lent and money paid back net off in one group, so a friend
     // repaying you does not look like income.
@@ -654,6 +656,7 @@ function refreshDashboard(ss, quick) {
     planTidyTabs(ss);
     planPayeesOnce(ss);
     planPayeesV2Once(ss);
+    planPayeesV3Once(ss);
     planPayWeeklyOnce(commitSh);
   }
   // The script still reads the data for two jobs a formula cannot do:
@@ -783,6 +786,47 @@ var PLAN_PAYEES_V2 = [
   ['INS MARKET|BECKER',                            'Convenience store',             'Convenience'],
   ['STAPLES',                                      'Staples',                       'Shopping']
 ];
+
+/**
+ * Once (18 Oct, answers from the owner): e-transfers sent from TD Business
+ * go to the owner's own accounts (owner draw, Moved); UPI payments to these
+ * people and firms are house construction; credits from Rayinigari Swapna are
+ * the INR side of a CAD → INR exchange (Moved); Mills Motors was a car
+ * purchase (an asset, not a living cost). Same mechanics as planPayeesV2Once.
+ */
+var PLAN_PAYEES_V3 = [
+  ['SEND E-TFR',                         'Pay myself (TD → personal)',  'Owner draw'],
+  ['UPI-RAVI INTERIORS',                 'Ravi Interiors',              'Construction - materials'],
+  ['UPI-SUNEETHA ELECTRICAL',            'Suneetha Electrical',         'Construction - materials'],
+  ['SHREEVIRENGINEERING|SHREE ?VIR ENGINEERING', 'Shree Vir Engineering', 'Construction - materials'],
+  ['UPI-SUJANA RAM',                     'Sujana Ram (Chamunda)',       'Construction - materials'],
+  ['UPI-DEVARAPALLI SURESH',             'Devarapalli Suresh',          'Construction - labour'],
+  ['UPI-FIROZ SHAIK',                    'Firoz Shaik',                 'Construction - labour'],
+  ['UPI-BHARAT YADAV',                   'Bharat Yadav',                'Construction - labour'],
+  ['UPI-RAYINIGARI SWAPNA',              'CAD → INR via Swapna',        'Transfer to India'],
+  ['MILLS MOTORS',                       'Mills Motors (car)',          'Car purchase']
+];
+
+function planPayeesV3Once(ss) {
+  planPayeesBatch(ss, 'plan_payees_v3', PLAN_PAYEES_V3);
+}
+
+/** Append Payees rows not already there (once per key), then label rows still unlabelled. */
+function planPayeesBatch(ss, key, rows) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(key)) return;
+  var sh = getTab(ss, CFG.TAB_PAYEES);
+  if (!sh) return;
+  var have = {};
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach(function (r) { have[String(r[0]).trim()] = true; });
+  var add = rows.filter(function (p) { return !have[p[0]]; }).map(function (p) { return [p[0], p[1], p[2], '']; });
+  if (add.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, add.length, 4).setNumberFormat('@').setValues(add);
+    SpreadsheetApp.flush();
+  }
+  relabelAll();
+  props.setProperty(key, new Date().toISOString());
+}
 
 function planPayeesV2Once(ss) {
   var props = PropertiesService.getScriptProperties();
