@@ -29,6 +29,9 @@ function thClearBands(sh) {
 /** Zebra rows on a block; the first row of the block is a header when header = true. */
 function thBand(range, header) {
   var b;
+  // A banding left over on any of these cells (e.g. from an older layout)
+  // would make Sheets refuse the new one; this range is ours, so clear it first.
+  range.getBandings().forEach(function (old) { old.remove(); });
   try {
     b = range.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, !!header, false);
   } catch (err) {
