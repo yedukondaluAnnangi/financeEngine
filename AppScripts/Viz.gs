@@ -119,8 +119,9 @@ function vzOverviewTab(ss) {
   sh.clear();
   sh.clearConditionalFormatRules();
   sh.getRange('A1:L200').breakApart();
+  thClearBands(sh);
   for (var c = 1; c <= 12; c++) sh.setColumnWidth(c, 105);
-  sh.setHiddenGridlines(true);
+  thPage(sh, 12);
 
   sh.getRange('A1').setValue('📈 Overview — your money at a glance').setFontSize(18).setFontWeight('bold').setFontColor(VZ.C.ink);
   sh.getRange('A2').setFormula('="Live · "&TEXT(NOW(),"ddd d mmm yyyy, HH:mm")&" · all amounts in CAD · INR converted at the rate on the Categories tab"')
@@ -153,7 +154,7 @@ function vzOverviewTab(ss) {
   // Per-group trend table, to the right of the third row of charts.
   var r0 = 43, g0 = 7;
   sh.getRange(r0, g0, 1, 6).setValues([['Spending group', 'This month', 'Last month', 'Avg / month', 'Trend', 'Share this month']])
-    .setFontWeight('bold').setBackground(VZ.C.band);
+    .setFontWeight('bold').setBackground(TH.NAVY).setFontColor('#ffffff');
   VZ.GROUPS.forEach(function (g, i) {
     var r = r0 + 1 + i, vr = i + 2;
     sh.getRange(r, g0).setValue(g);
@@ -166,6 +167,8 @@ function vzOverviewTab(ss) {
       ':H$' + (r0 + VZ.GROUPS.length) + '));"color1","' + VZ.C.house + '"}))');
   });
   var gEnd = r0 + VZ.GROUPS.length;
+  thBand(sh.getRange(r0 + 1, g0, VZ.GROUPS.length, 6), false);
+  sh.getRange(r0 + 1, g0, VZ.GROUPS.length, 1).setFontWeight('bold');
   sh.getRange(r0 + 1, g0 + 1, VZ.GROUPS.length, 3).setNumberFormat('$#,##0;[Red]-$#,##0');
   sh.getRange(gEnd + 1, g0).setValue('Total').setFontWeight('bold');
   ['H', 'I', 'J'].forEach(function (L, i) {
@@ -199,6 +202,7 @@ function vzOverviewLinks(ss) {
     var t = getTab(ss, name);
     return t ? 'HYPERLINK("#gid=' + t.getSheetId() + '","' + label + '")' : '"' + label + '"';
   };
+  sh.getRange('H1').setFormula('=' + link(BS.TAB_VIEW, '🏛 Net worth →')).setFontWeight('bold');
   sh.getRange('I1').setFormula('=' + link(PLAN.TAB_DASH, '🧾 What to pay →')).setFontWeight('bold');
   sh.getRange('J1').setFormula('=' + link(VZ.TAB_TRENDS, '📊 Trends →')).setFontWeight('bold');
   sh.getRange('K1').setFormula('=' + link(VZ.TAB_ACCOUNTS, '🏦 Accounts →')).setFontWeight('bold');
@@ -256,7 +260,9 @@ function vzTrendsTab(ss) {
   sh.clear();
   sh.clearConditionalFormatRules();
   var last = 4 + VZ.CAT_ROWS;                         // last data row
-  sh.getRange('A1').setValue('📊 Trends — every spending category, month by month (CAD)').setFontSize(16).setFontWeight('bold');
+  thClearBands(sh);
+  thPage(sh, 17);
+  sh.getRange('A1').setValue('📊 Trends — every spending category, month by month (CAD)');
   sh.getRange('A2').setValue('Darker red = more money. The Trend column is one bar per month, oldest on the left. ' +
     'Card payments and transfers between your accounts are left out; income is on the Overview.').setFontColor(VZ.C.grey);
 
@@ -265,7 +271,7 @@ function vzTrendsTab(ss) {
   sh.getRange('A4:B4').setValues([['Group', 'Category']]);
   sh.getRange('C4').setFormula('=TRANSPOSE(_Viz!B2:B13)');
   sh.getRange('O4:Q4').setValues([['Total', 'Avg / month', 'Trend']]);
-  sh.getRange(4, 1, 1, 17).setFontWeight('bold').setBackground(VZ.C.band);
+  sh.getRange(4, 1, 1, 17).setFontWeight('bold').setBackground(TH.NAVY).setFontColor('#ffffff');
 
   // Every spending category, in Dashboard group order. Unlabelled rows show as "(not labelled)".
   sh.getRange('A5').setFormula('=IFERROR(LET(u,UNIQUE(FILTER({_Calc!K2:K,ARRAYFORMULA(IF(_Calc!I2:I="","(not labelled)",_Calc!I2:I))},' +
@@ -283,10 +289,12 @@ function vzTrendsTab(ss) {
   }
   sh.getRange(5, 17, VZ.CAT_ROWS, 1).setFormulas(spark);
 
+  thBand(sh.getRange(5, 1, VZ.CAT_ROWS, 17), false);
   sh.getRange(5, 3, VZ.CAT_ROWS, 14).setNumberFormat('$#,##0;-$#,##0;""');
   sh.getRange(5, 1, VZ.CAT_ROWS, 1).setFontColor(VZ.C.grey);
   sh.getRange(5, 15, VZ.CAT_ROWS, 1).setFontWeight('bold');
-  sh.setRowHeight(3, 2);
+  sh.setRowHeight(4, 30);
+  sh.getRange(4, 3, 1, 15).setHorizontalAlignment('center');
   sh.hideRows(3);
   sh.setFrozenRows(4);
   sh.setFrozenColumns(2);
@@ -313,13 +321,17 @@ function vzAccountsTab(ss) {
   sh.clear();
   sh.clearConditionalFormatRules();
   var n = VZ.ACCT_ROWS, A = 'A4:A' + (3 + n);
-  sh.getRange('A1').setValue('🏦 Accounts — is everything up to date?').setFontSize(16).setFontWeight('bold');
+  thClearBands(sh);
+  thPage(sh, 12);
+  sh.getRange('A1').setValue('🏦 Accounts — is everything up to date?');
+  thBand(sh.getRange(4, 1, n, 12), false);
+  sh.setRowHeight(3, 34);
   sh.getRange('A2').setValue('Statements up to = the newest transaction on file. Over ' + FX.STALE_DAYS +
     ' days behind turns red: upload that account to the Inbox. Balances are in the account\'s own currency, from the last statement that carried one.')
     .setFontColor(VZ.C.grey);
   sh.getRange('A3:L3').setValues([['Account', 'Currency', 'First on file', 'Statements up to', 'Days behind', 'Transactions',
     'In this month (CAD)', 'Out this month (CAD)', 'Last known balance', 'Balance as of', 'Spending, last 6 months', 'Status']])
-    .setFontWeight('bold').setBackground(VZ.C.band);
+    .setFontWeight('bold').setBackground(TH.NAVY).setFontColor('#ffffff');
 
   var by = function (body) { return '=BYROW(' + A + ',LAMBDA(a,IF(a="","",' + body + ')))'; };
   var m0 = 'TEXT(TODAY(),"yyyy-mm")';
@@ -364,7 +376,8 @@ function vzAccountsTab(ss) {
 
 /** Tabs in the order you use them; filter row on Transactions. */
 function vzArrange(ss) {
-  [VZ.TAB_OVERVIEW, PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, VZ.TAB_TRENDS, VZ.TAB_ACCOUNTS, CFG.TAB_PAYEES, FX.CATS]
+  [VZ.TAB_OVERVIEW, BS.TAB_VIEW, PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, VZ.TAB_TRENDS, VZ.TAB_ACCOUNTS,
+   BS.TAB_INPUT, CFG.TAB_PAYEES, FX.CATS]
     .forEach(function (name, i) {
       var sh = getTab(ss, name);
       if (!sh) return;
@@ -383,6 +396,9 @@ function vzInstall(ss) {
   vzOverviewTab(ss);
   vzTrendsTab(ss);
   vzAccountsTab(ss);
+  bsInstall(ss);
+  thPayees(ss);
+  thCategories(ss);
   vzOverviewLinks(ss);
   vzArrange(ss);
 }

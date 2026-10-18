@@ -232,7 +232,7 @@ function fxCommitFormulas(sh, rows) {
   // A new formula column may reach past the tab's last column: grow it first.
   var need = c0 + w - 1 - sh.getMaxColumns();
   if (need > 0) sh.insertColumnsAfter(sh.getMaxColumns(), need);
-  sh.getRange(1, c0, 1, w).setValues([FX.COMMIT_CALC]).setFontWeight('bold').setBackground('#e8f0fe');
+  thHeader(sh.getRange(1, c0, 1, w).setValues([FX.COMMIT_CALC]), TH.CALC_HEAD);
   sh.getRange(1, c0).setNote('Columns M–Z are formulas — don\'t type here. They fill in for every row you add on the left.');
   sh.setFrozenColumns(1);
   [90, 100, 100, 95, 90, 100, 100, 300, 110, 110, 60, 80, 120, 80, 110].forEach(function (px, i) { sh.setColumnWidth(c0 + i, px); });
@@ -456,9 +456,14 @@ function fxDashboardTab(ss) {
   });
   var W = 8;
   function rng(p) { return sh.getRange(p[0], p[1], p[2] || 1, p[3] || 1); }
-  d.styles.title.forEach(function (p) { sh.getRange(p[0], 1, 1, W).setFontWeight('bold').setFontSize(12).setBackground('#e8f0fe'); });
-  d.styles.headline.forEach(function (p) { sh.getRange(p[0], 1, 1, W).setFontWeight('bold').setFontSize(13).setBackground('#fff8e1'); });
-  d.styles.head.forEach(function (p) { rng(p).setFontWeight('bold').setBackground('#f1f3f4'); });
+  thDashboard(sh);
+  d.styles.title.forEach(function (p) {
+    if (p[0] === 1) return;                                   // the page title, styled by thPage
+    sh.getRange(p[0], 1, 1, W).setFontWeight('bold').setFontSize(12).setBackground(TH.SECTION).setFontColor('#ffffff');
+    sh.setRowHeight(p[0], 28);
+  });
+  d.styles.headline.forEach(function (p) { sh.getRange(p[0], 1, 1, W).setFontWeight('bold').setFontSize(13); });
+  d.styles.head.forEach(function (p) { thColHead(rng(p)); });
   d.styles.note.forEach(function (p) { rng(p).setFontColor('#5f6368').setFontStyle('italic'); });
   d.styles.bold.forEach(function (p) { rng(p).setFontWeight('bold'); });
   d.styles.money.forEach(function (p) { rng(p).setNumberFormat('$#,##0;[Red]-$#,##0'); });
@@ -482,17 +487,10 @@ function fxDashboardTab(ss) {
   return sh;
 }
 
-/** Commitments status colours (column T). */
+/** Commitments colours and look (Theme.gs). */
 function fxCommitColours(sh) {
-  var rg = sh.getRange('T2:T');
-  var rule = function (txt, bg, fg) {
-    var b = SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith(txt).setRanges([rg]);
-    if (bg) b.setBackground(bg);
-    if (fg) b.setFontColor(fg);
-    return b.build();
-  };
-  sh.setConditionalFormatRules([rule('🔴', '#fce8e6'), rule('⚠', '#fce8e6'), rule('⏳', '#fef7e0'),
-                                rule('📌', '#fef7e0'), rule('❔', null, '#80868b'), rule('✅', '#e6f4ea')]);
+  thCommitments(sh);
+  thCommitRules(sh);
 }
 
 /**
@@ -518,5 +516,5 @@ function planInstallFormulas(ss, commitSh, cats) {
   }
   fxCommitFormulas(commitSh);
   // Charts are re-drawn every refresh: their range follows the number of months on record.
-  try { SpreadsheetApp.flush(); vzOverviewCharts(ss); } catch (err) { planIssue('Overview charts failed', err); }
+  try { SpreadsheetApp.flush(); vzOverviewCharts(ss); bsCharts(ss); } catch (err) { planIssue('Overview / Balance Sheet charts failed', err); }
 }

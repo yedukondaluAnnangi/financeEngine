@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-17.3',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-18.1',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -802,6 +802,7 @@ function planDaily() {
   props.setProperty('plan_day', stamp);
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
   refreshDashboard(ss);
+  try { bsSnapshot(ss); } catch (err) { planIssue('Net worth snapshot failed', err); }
   var month = today.slice(0, 7);
   if (+today.slice(8, 10) <= PLAN.REVIEW_BY_DAY && props.getProperty('plan_review') !== month) {
     props.setProperty('plan_review', month);
