@@ -121,7 +121,7 @@ function vzOverviewTab(ss) {
   sh.clearConditionalFormatRules();
   sh.getRange('A1:L200').breakApart();
   thClearBands(sh);
-  for (var c = 1; c <= 12; c++) sh.setColumnWidth(c, 105);
+  for (var c = 1; c <= 12; c++) sh.setColumnWidth(c, c === 1 || c === 7 ? 190 : 105);
   thPage(sh, 12);
 
   sh.getRange('A1').setValue('📈 Overview — your money at a glance').setFontSize(18).setFontWeight('bold').setFontColor(VZ.C.ink);
@@ -191,8 +191,134 @@ function vzOverviewTab(ss) {
   ];
   sh.getRange(62, 1, how.length, 1).setValues(how.map(function (h) { return [h]; })).setFontColor(VZ.C.grey);
   sh.getRange(62, 1).setFontWeight('bold').setFontColor(VZ.C.ink);
+  vzOverviewDetails(sh);
   sh.setFrozenRows(3);
   return sh;
+}
+
+/**
+ * Under the charts: the payments behind each tile. Left column A–F, right
+ * column G–L, fixed rows so the tile links (vzOverviewLinks) can jump to them.
+ *   plan    how you need to spend — plan vs so far   | how much you have
+ *   due     still to pay this month                  | money in this month
+ *   spend   living costs by payee                    | house construction
+ */
+var VZ_DETAIL = { plan: 72, due: 83, spend: 103, rows: { due: 15, spend: 25 } };
+
+function vzOverviewDetails(sh) {
+  var D = 'Dashboard!', CM = 'Commitments!', m0 = 'TEXT(TODAY(),"yyyy-mm")';
+  var money = '$#,##0.00;[Red]-$#,##0.00';
+  var section = function (r, c, text) {
+    sh.getRange(r, c, 1, 6).setBackground(TH.SECTION).setFontColor('#ffffff').setFontWeight('bold').setFontSize(12);
+    sh.getRange(r, c).setValue(text);
+    sh.setRowHeight(r, 28);
+  };
+  var head = function (r, c, list) {
+    sh.getRange(r, c, 1, list.length).setValues([list]);
+    thColHead(sh.getRange(r, c, 1, 6));
+  };
+  var band = function (r, c, n) { thBand(sh.getRange(r, c, n, 6), false); };
+
+  // ---- How you need to spend (left) ----
+  var P = VZ_DETAIL.plan, pr = P + 2;
+  section(P, 1, '🧭 How you need to spend — this month\'s plan');
+  head(P + 1, 1, ['', 'Plan', 'So far', 'Still to go', 'How it is worked out']);
+  var billsSoFar = 'SUMIFS(' + CM + 'V2:V,' + CM + 'W2:W,"Out",' + CM + 'X2:X,"<>House")';
+  var plan = [
+    ['Money in', '=' + D + 'B12', '=' + D + 'B7', 'Pay and benefits due this month (Commitments); so far = what landed, after HST'],
+    ['Bills & loans', '=-' + D + 'B13', '=' + billsSoFar, 'Every bill and loan due this month; so far = the ones seen paid'],
+    ['Everyday spending', '=-' + D + 'B14', '=MAX(0,' + D + 'C7-' + billsSoFar + ')', 'Last month\'s pace; so far = living costs minus bills'],
+    ['House construction', '=-' + D + 'B16', '=' + D + 'D7', 'Last month\'s pace, or what is due if larger'],
+    ['Left over', '=' + D + 'B17', '=' + D + 'B7-' + D + 'C7-' + D + 'D7', 'Money in minus everything above'],
+    ['HST to set aside', '=-' + D + 'B20', '', 'Collected this year, owed to CRA — not yours to spend']
+  ];
+  plan.forEach(function (p, i) {
+    var r = pr + i;
+    sh.getRange(r, 1).setValue(p[0]).setFontWeight('bold');
+    sh.getRange(r, 2).setFormula(p[1]);
+    if (p[2]) sh.getRange(r, 3).setFormula(p[2]);
+    if (i < 5) sh.getRange(r, 4).setFormula(i === 0 || i === 4 ? '=B' + r + '-C' + r : '=MAX(0,B' + r + '-C' + r + ')');
+    sh.getRange(r, 5).setValue(p[3]).setFontColor(TH.GREY).setFontSize(9);
+  });
+  band(pr, 1, plan.length);
+  sh.getRange(pr, 2, plan.length, 3).setNumberFormat('$#,##0;[Red]-$#,##0');
+  sh.getRange(pr + 4, 1, 1, 4).setBackground(TH.GOOD_BG).setFontWeight('bold');
+
+  // ---- How much you have (right) ----
+  var BSV = "'" + BS.TAB_VIEW + "'!";
+  section(P, 7, '🏦 How much you have — cash and bank');
+  head(P + 1, 7, ['Account', 'As of', 'Balance', 'Currency', 'CAD']);
+  sh.getRange(pr, 7).setFormula('=IFERROR(ARRAY_CONSTRAIN(FILTER({' + BSV + 'A12:A39,' + BSV + 'D12:D39,' + BSV + 'E12:E39,' + BSV + 'F12:F39,' +
+    BSV + 'G12:G39},' + BSV + 'B12:B39="Cash & bank"),5,5),"No balances yet — type them on Assets & Debts")');
+  band(pr, 7, 5);
+  sh.getRange(pr + 5, 7).setValue('Total cash').setFontWeight('bold');
+  sh.getRange(pr + 5, 11).setFormula('=SUM(K' + pr + ':K' + (pr + 4) + ')').setFontWeight('bold').setNumberFormat('$#,##0');
+  sh.getRange(pr + 5, 7, 1, 6).setBackground(TH.GOOD_BG);
+  sh.getRange(pr + 6, 7).setFormula('=IFERROR("No balance on file: "&TEXTJOIN(", ",TRUE,FILTER(Accounts!A4:A23,Accounts!I4:I23="—",' +
+    'NOT(REGEXMATCH(Accounts!A4:A23,"(?i)mastercard|visa|regalia|credit"))))&" — type today\'s balance on Assets & Debts","")')
+    .setFontColor(TH.GREY).setFontSize(9);
+  sh.getRange(pr, 9, 5, 1).setNumberFormat('#,##0.00');
+  sh.getRange(pr, 11, 5, 1).setNumberFormat('$#,##0.00');
+
+  // ---- Still to pay this month (left) ----
+  var S = VZ_DETAIL.due, sr = S + 2, sn = VZ_DETAIL.rows.due;
+  section(S, 1, '🧾 Still to pay this month — every bill not seen paid yet');
+  head(S + 1, 1, ['What', 'Due', 'CAD', 'Account', 'Status']);
+  sh.getRange(sr, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({' + CM + 'A2:A,ARRAYFORMULA(IF(' + CM + 'R2:R="",' + CM + 'S2:S,' +
+    CM + 'R2:R)),' + CM + 'Y2:Y,' + CM + 'G2:G,' + CM + 'T2:T},' + CM + 'A2:A<>"",' + CM + 'W2:W="Out",' + CM + 'I2:I<>"Cancel",' +
+    CM + 'Y2:Y>0),2,TRUE),' + sn + ',5),"✅ Nothing left to pay this month")');
+  band(sr, 1, sn);
+  sh.getRange(sr + sn, 1).setValue('Total still to pay').setFontWeight('bold');
+  sh.getRange(sr + sn, 3).setFormula('=SUM(C' + sr + ':C' + (sr + sn - 1) + ')').setFontWeight('bold').setNumberFormat('$#,##0');
+  sh.getRange(sr + sn, 1, 1, 6).setBackground(TH.BAD_BG);
+  sh.getRange(sr, 2, sn, 1).setNumberFormat('ddd d mmm');
+  sh.getRange(sr, 3, sn, 1).setNumberFormat(money);
+
+  // ---- Money in this month (right) ----
+  section(S, 7, '💵 Money in this month');
+  head(S + 1, 7, ['From', 'Date', 'CAD', 'Account']);
+  sh.getRange(sr, 7).setFormula('=IFERROR(ARRAY_CONSTRAIN(QUERY(_Calc!A2:M,"select E, A, H, C where B = \'"&' + m0 +
+    '&"\' and J = \'Income\' order by A desc label E \'\', A \'\', H \'\', C \'\'",0),' + sn + ',4),"Nothing in yet this month")');
+  band(sr, 7, sn);
+  sh.getRange(sr + sn, 7).setValue('Total in (HST included)').setFontWeight('bold');
+  sh.getRange(sr + sn, 9).setFormula('=SUMIFS(_Calc!H:H,_Calc!B:B,' + m0 + ',_Calc!J:J,"Income")').setFontWeight('bold').setNumberFormat('$#,##0');
+  sh.getRange(sr + sn, 7, 1, 6).setBackground(TH.GOOD_BG);
+  sh.getRange(sr, 8, sn, 1).setNumberFormat('ddd d mmm');
+  sh.getRange(sr, 9, sn, 1).setNumberFormat(money);
+
+  // ---- Living costs by payee (left) ----
+  var L = VZ_DETAIL.spend, lr = L + 2, ln = VZ_DETAIL.rows.spend;
+  section(L, 1, '🛒 Living costs this month — where it went, by payee');
+  head(L + 1, 1, ['Payee', 'Category', 'Times', 'CAD', 'Share']);
+  sh.getRange(lr, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(QUERY(_Calc!A2:M,"select E, I, count(L), sum(L) where B = \'"&' + m0 +
+    '&"\' and J = \'Living\' group by E, I order by sum(L) desc label count(L) \'\', sum(L) \'\'",0),' + ln + ',4),"No living costs yet this month")');
+  var share = [];
+  for (var r = lr; r < lr + ln; r++) {
+    share.push(['=IF(NOT(ISNUMBER(D' + r + ')),"",IF(D' + r + '<=0,"",SPARKLINE(D' + r + ',{"charttype","bar";"max",MAX(1,MAX(D$' + lr +
+                ':D$' + (lr + ln - 1) + '));"color1","' + VZ.C.living + '"})))']);
+  }
+  sh.getRange(lr, 5, ln, 1).setFormulas(share);
+  band(lr, 1, ln);
+  sh.getRange(lr + ln, 1).setValue('Total living costs').setFontWeight('bold');
+  sh.getRange(lr + ln, 4).setFormula('=' + D + 'C7').setFontWeight('bold').setNumberFormat('$#,##0');
+  sh.getRange(lr + ln, 1, 1, 6).setBackground(TH.BAD_BG);
+  sh.getRange(lr, 4, ln, 1).setNumberFormat(money);
+  sh.getRange(lr + ln + 1, 1).setValue('The top ' + ln + ' payees are listed; the total counts them all. Every category, month by month: the Trends tab.')
+    .setFontColor(TH.GREY).setFontSize(9);
+
+  // ---- House construction (right) ----
+  section(L, 7, '🏗 House construction — this month');
+  head(L + 1, 7, ['Paid to', 'Date', 'What', 'CAD']);
+  sh.getRange(lr, 7).setFormula('=IFERROR(ARRAY_CONSTRAIN(QUERY(_Calc!A2:M,"select E, A, I, L where B = \'"&' + m0 +
+    '&"\' and J = \'House\' order by L desc label E \'\', A \'\', I \'\', L \'\'",0),' + ln + ',4),"No house payments yet this month")');
+  band(lr, 7, ln);
+  sh.getRange(lr + ln, 7).setValue('This month').setFontWeight('bold');
+  sh.getRange(lr + ln, 10).setFormula('=' + D + 'D7').setFontWeight('bold').setNumberFormat('$#,##0');
+  sh.getRange(lr + ln, 7, 1, 6).setBackground(TH.WARN_BG);
+  sh.getRange(lr + ln + 1, 7).setValue('Spent on the house so far, all months').setFontWeight('bold');
+  sh.getRange(lr + ln + 1, 10).setFormula('=SUMIFS(_Calc!L:L,_Calc!J:J,"House")').setFontWeight('bold').setNumberFormat('$#,##0');
+  sh.getRange(lr, 8, ln, 1).setNumberFormat('ddd d mmm');
+  sh.getRange(lr, 10, ln, 1).setNumberFormat(money);
 }
 
 /** Links to the other tabs, written once their ids are known. */
@@ -208,6 +334,14 @@ function vzOverviewLinks(ss) {
   sh.getRange('J1').setFormula('=' + link(VZ.TAB_TRENDS, '📊 Trends →')).setFontWeight('bold');
   sh.getRange('K1').setFormula('=' + link(VZ.TAB_ACCOUNTS, '🏦 Accounts →')).setFontWeight('bold');
   sh.getRange('L1').setFormula('=' + link(PLAN.TAB_COMMIT, '🔁 Commitments →')).setFontWeight('bold');
+  // Under each tile: jump to the payments behind it.
+  var here = function (row, label) { return '=HYPERLINK("#gid=' + sh.getSheetId() + '&range=A' + row + '","' + label + '")'; };
+  [[1, VZ_DETAIL.due, '▼ money in'], [3, VZ_DETAIL.spend, '▼ living costs'], [5, VZ_DETAIL.spend, '▼ house payments'],
+   [7, VZ_DETAIL.plan, '▼ the plan'], [9, VZ_DETAIL.plan, '▼ the plan'], [11, VZ_DETAIL.due, '▼ what is left to pay']]
+    .forEach(function (t) {
+      sh.getRange(8, t[0], 1, 2).merge();
+      sh.getRange(8, t[0]).setFormula(here(t[1], t[2])).setFontSize(9);
+    });
 }
 
 /** Re-draw the five charts so their ranges match the months on record. */
