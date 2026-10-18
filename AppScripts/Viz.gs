@@ -562,6 +562,9 @@ function vzPeekTab(ss) {
     '"select Col1, Col2, count(Col3), sum(Col3), min(Col5), max(Col5) where Col4 = \'Not labelled yet\' group by Col1, Col2 order by sum(Col3) asc ' +
     'label count(Col3) \'\', sum(Col3) \'\', min(Col5) \'\', max(Col5) \'\'",0),' +
     'LAMBDA(r,LEFT(INDEX(r,1,1),48)&" ¦ "&LEFT(INDEX(r,1,2),12)&" ¦ x"&INDEX(r,1,3)&" ¦ "&ROUND(INDEX(r,1,4),2)&" ¦ "&INDEX(r,1,5)&".."&INDEX(r,1,6)))),"none")');
+  // Row 2: the first rows of each Overview detail list, flattened, for the same reason.
+  sh.getRange('A2').setFormula('=IFERROR(TOROW(VSTACK(Overview!A74:D79,Overview!G74:J78,Overview!A85:D89,Overview!G85:J89,' +
+    'Overview!A105:D109,Overview!G105:J109,Overview!A100:D100,Overview!A130:D130)),"peek failed")');
   if (!sh.isSheetHidden()) sh.hideSheet();
 }
 
