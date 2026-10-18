@@ -49,11 +49,13 @@ var VZ_HST = 'Categories!$F$8';
 function vzVizTab(ss) {
   var sh = getTab(ss, VZ.TAB_VIZ) || ss.insertSheet(VZ.TAB_VIZ);
   sh.clear();
-  var m = 'ARRAYFORMULA(IF($A2:$A13="","",';
-  var sumJ = function (k) { return 'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,$A2:$A13,_Calc!$J:$J,"' + k + '")'; };
+  // SUMIFS does not loop over an array of criteria inside ARRAYFORMULA (it
+  // quietly uses the first one), so every per-row sum here goes through MAP.
+  var perMonth = function (body) { return '=MAP($A2:$A13,LAMBDA(k,IF(k="","",' + body + ')))'; };
+  var sumJ = function (j) { return 'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,k,_Calc!$J:$J,"' + j + '")'; };
   var spendIn = function (cur) {
-    return 'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,$A2:$A13,_Calc!$G:$G,"' + cur + '",_Calc!$J:$J,"Living")+' +
-           'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,$A2:$A13,_Calc!$G:$G,"' + cur + '",_Calc!$J:$J,"House")';
+    return 'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,k,_Calc!$G:$G,"' + cur + '",_Calc!$J:$J,"Living")+' +
+           'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,k,_Calc!$G:$G,"' + cur + '",_Calc!$J:$J,"House")';
   };
   sh.getRange('A1:I1').setValues([['Month', 'Month ', 'Money in (after HST)', 'Living costs', 'House construction',
                                    'Lent / saved', 'Net', 'Spent in Canada (CAD)', 'Spent in India (CAD)']]);
@@ -61,21 +63,21 @@ function vzVizTab(ss) {
   sh.getRange('A2').setFormula('=ARRAYFORMULA(LET(t,DATE(YEAR(TODAY()),MONTH(TODAY()),1),lo,MIN(_Calc!A2:A),' +
     'f,IF(lo=0,t,DATE(YEAR(lo),MONTH(lo),1)),n,MAX(1,MIN(' + VZ.MONTHS + ',DATEDIF(f,t,"M")+1)),' +
     'd,DATE(YEAR(t),MONTH(t)+SEQUENCE(n,1,1-n),1),HSTACK(TEXT(d,"yyyy-mm"),TEXT(d,"mmm yy"))))');
-  sh.getRange('C2').setFormula('=' + m + sumJ('Income') + '-SUMIFS(_Calc!$H:$H,_Calc!$I:$I,"Business income",_Calc!$B:$B,$A2:$A13)*' +
-                               VZ_HST + '/(1+' + VZ_HST + ')))');
-  sh.getRange('D2').setFormula('=' + m + sumJ('Living') + '))');
-  sh.getRange('E2').setFormula('=' + m + sumJ('House') + '))');
-  sh.getRange('F2').setFormula('=' + m + sumJ('Lent') + '+' + sumJ('Saved') + '))');
+  sh.getRange('C2').setFormula(perMonth(sumJ('Income') + '-SUMIFS(_Calc!$H:$H,_Calc!$I:$I,"Business income",_Calc!$B:$B,k)*' +
+                               VZ_HST + '/(1+' + VZ_HST + ')'));
+  sh.getRange('D2').setFormula(perMonth(sumJ('Living')));
+  sh.getRange('E2').setFormula(perMonth(sumJ('House')));
+  sh.getRange('F2').setFormula(perMonth(sumJ('Lent') + '+' + sumJ('Saved')));
   sh.getRange('G2').setFormula('=ARRAYFORMULA(IF($A2:$A13="","",C2:C13-D2:D13-E2:E13-F2:F13))');
-  sh.getRange('H2').setFormula('=' + m + spendIn('CAD') + '))');
-  sh.getRange('I2').setFormula('=' + m + spendIn('INR') + '))');
+  sh.getRange('H2').setFormula(perMonth(spendIn('CAD')));
+  sh.getRange('I2').setFormula(perMonth(spendIn('INR')));
 
   // Groups × months. Negative totals (a refund month) are drawn as zero in the donut.
   sh.getRange('K1:M1').setValues([['Group', 'This month', 'Last month']]);
   sh.getRange(2, 11, VZ.GROUPS.length, 1).setValues(VZ.GROUPS.map(function (g) { return [g]; }));
   var gr = 'K2:K' + (VZ.GROUPS.length + 1);
   var byGroup = function (mk) {
-    return '=ARRAYFORMULA(LET(v,SUMIFS(_Calc!$L:$L,_Calc!$K:$K,' + gr + ',_Calc!$B:$B,' + mk + '),IF(v<0,0,v)))';
+    return '=MAP(' + gr + ',LAMBDA(g,LET(v,SUMIFS(_Calc!$L:$L,_Calc!$K:$K,g,_Calc!$B:$B,' + mk + '),IF(v<0,0,v))))';
   };
   sh.getRange('L2').setFormula(byGroup('TEXT(TODAY(),"yyyy-mm")'));
   sh.getRange('M2').setFormula(byGroup('TEXT(EDATE(TODAY(),-1),"yyyy-mm")'));
@@ -87,10 +89,10 @@ function vzVizTab(ss) {
   sh.getRange('AA1:AC1').setValues([['Day', 'This month', 'Last month']]);
   sh.getRange('AA2').setFormula('=SEQUENCE(31)');
   var start0 = 'EOMONTH(TODAY(),-1)+1', start1 = 'EOMONTH(TODAY(),-2)+1';
-  sh.getRange('AB2').setFormula('=ARRAYFORMULA(IF(AA2:AA32>DAY(TODAY()),NA(),SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Living",' +
-    '_Calc!$A:$A,">="&' + start0 + ',_Calc!$A:$A,"<"&(' + start0 + '+AA2:AA32))))');
-  sh.getRange('AC2').setFormula('=ARRAYFORMULA(IF(AA2:AA32>DAY(EOMONTH(TODAY(),-1)),NA(),SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Living",' +
-    '_Calc!$A:$A,">="&' + start1 + ',_Calc!$A:$A,"<"&(' + start1 + '+AA2:AA32))))');
+  sh.getRange('AB2').setFormula('=MAP(AA2:AA32,LAMBDA(dy,IF(dy>DAY(TODAY()),NA(),SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Living",' +
+    '_Calc!$A:$A,">="&' + start0 + ',_Calc!$A:$A,"<"&(' + start0 + '+dy)))))');
+  sh.getRange('AC2').setFormula('=MAP(AA2:AA32,LAMBDA(dy,IF(dy>DAY(EOMONTH(TODAY(),-1)),NA(),SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Living",' +
+    '_Calc!$A:$A,">="&' + start1 + ',_Calc!$A:$A,"<"&(' + start1 + '+dy)))))');
 
   // Top categories, last 3 months including this one.
   sh.getRange('AE1').setFormula('=IFERROR(QUERY(_Calc!A2:M,"select I, sum(L) where (J = \'Living\' or J = \'House\') and I <> \'\' and B >= \'"&' +
