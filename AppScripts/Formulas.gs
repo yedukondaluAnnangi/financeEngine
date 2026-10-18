@@ -214,12 +214,15 @@ function planRowFormulas(r) {
       '"One-off",IF(isD,SUM((days=d)*1),0),' +
       'SUM((DAY(days)=MIN(k,DAY(e)))*valid*IF(isD,IFERROR(MOD(DATEDIF(DATE(YEAR(d),MONTH(d),1),s,"M"),step)=0,FALSE),TRUE))),' +
     'n*$M' + r + ')),0))';
-  var V = '=IF($A' + r + '="",0,IFERROR(ARRAYFORMULA(SUM(FILTER(ABS(_Calc!$H$2:$H),' + ok + ',_Calc!$B$2:$B=TEXT(TODAY(),"yyyy-mm")))),0))';
+  // Paid amounts on the same footing as Amount: business income lands with
+  // HST on top, which is owed to CRA and not part of what the row expects.
+  var net = 'ABS(_Calc!$H$2:$H)/IF(_Calc!$I$2:$I="Business income",1+' + FX_HST + ',1)';
+  var V = '=IF($A' + r + '="",0,IFERROR(ARRAYFORMULA(SUM(FILTER(' + net + ',' + ok + ',_Calc!$B$2:$B=TEXT(TODAY(),"yyyy-mm")))),0))';
   var W = '=' + blank + 'IF(IFERROR(VLOOKUP($H' + r + ',Categories!$A:$C,3,0),"")="Income","In","Out"))';
   var X = '=' + blank + 'IFERROR(VLOOKUP($H' + r + ',Categories!$A:$C,3,0),"Living"))';
   var Y = '=' + blank + 'IF($I' + r + '="Cancel",0,MAX(0,$U' + r + '-$V' + r + ')))';
   var Z = '=IF(OR($A' + r + '="",$S' + r + '=""),"",$S' + r + '-TODAY())';
-  var AA = '=IF($A' + r + '="",0,IFERROR(ARRAYFORMULA(SUM(FILTER(ABS(_Calc!$H$2:$H),' + ok + ',_Calc!$B$2:$B=TEXT(EDATE(TODAY(),-1),"yyyy-mm")))),0))';
+  var AA = '=IF($A' + r + '="",0,IFERROR(ARRAYFORMULA(SUM(FILTER(' + net + ',' + ok + ',_Calc!$B$2:$B=TEXT(EDATE(TODAY(),-1),"yyyy-mm")))),0))';
   return [M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA];
 }
 
@@ -502,12 +505,18 @@ function planInstallFormulas(ss, commitSh, cats) {
   fxCategoriesTab(ss, cats);
   var props = PropertiesService.getScriptProperties();
   var dash = getTab(ss, PLAN.TAB_DASH);
-  var fresh = props.getProperty('fx_version') !== PLAN.VERSION || !dash || !dash.getRange('A3').getFormula() || !getTab(ss, FX.CALC);
+  var fresh = props.getProperty('fx_version') !== PLAN.VERSION || !dash || !dash.getRange('A3').getFormula() ||
+              !getTab(ss, FX.CALC) || !getTab(ss, VZ.TAB_OVERVIEW);
   if (fresh) {
     fxCalcTab(ss);
     fxDashboardTab(ss);
     fxCommitColours(commitSh);
+    // The picture tabs are a view: a problem there is logged, never allowed
+    // to stop the Dashboard and Commitments upkeep.
+    try { vzInstall(ss); } catch (err) { planIssue('Overview / Trends / Accounts build failed', err); }
     props.setProperty('fx_version', PLAN.VERSION);
   }
   fxCommitFormulas(commitSh);
+  // Charts are re-drawn every refresh: their range follows the number of months on record.
+  try { SpreadsheetApp.flush(); vzOverviewCharts(ss); } catch (err) { planIssue('Overview charts failed', err); }
 }

@@ -1,0 +1,386 @@
+/**
+ * Viz.gs — the picture: Overview (tiles + charts), Trends (category × month
+ * heatmap) and Accounts (one row per account). The Dashboard stays the to-do
+ * list; these tabs are for seeing where the money goes.
+ *
+ * Same rule as the Dashboard: every number is a live formula over _Calc, so
+ * nothing here goes stale between refreshes. The script only lays the
+ * formulas out (when PLAN.VERSION changes) and re-draws the charts on every
+ * refresh, because a chart's range has to match how many months there are.
+ *
+ *   _Viz       (hidden) the small tables the charts read: one row per month,
+ *              one row per group, one row per day of the month.
+ *   Overview   six tiles, five charts, a trend line per spending group.
+ *   Trends     every spending category down the side, the last 12 months
+ *              across, shaded by size, with a sparkline per row.
+ *   Accounts   statements up to, days behind, this month in / out, last
+ *              known balance, six-month spending sparkline.
+ */
+
+var VZ = {
+  TAB_VIZ: '_Viz',
+  TAB_OVERVIEW: 'Overview',
+  TAB_TRENDS: 'Trends',
+  TAB_ACCOUNTS: 'Accounts',
+  MONTHS: 12,                    // the most months any chart or table shows
+  CAT_ROWS: 96,                  // Trends: room for this many categories
+  ACCT_ROWS: 20,                 // Accounts: room for this many accounts
+  // Spending groups, in Dashboard order: everything except Income and Moved.
+  GROUPS: ['Bills & loans', 'Essentials', 'Lifestyle', 'Subscriptions', 'Fees & charges', 'Business costs',
+           'Other', 'Not labelled yet', 'House construction', 'Lent out', 'Saved / invested'],
+  C: { in: '#1e8e3e', living: '#d93025', house: '#f9ab00', net: '#1a73e8', lent: '#9334e6',
+       cad: '#d93025', inr: '#ff6d01', ink: '#202124', grey: '#5f6368', tile: '#f8f9fa', band: '#e8f0fe' }
+};
+
+var VZ_HST = 'Categories!$F$8';
+
+
+/* ---- _Viz: the chart data ----------------------------------------------------- */
+
+/**
+ * Layout (all formulas):
+ *   A1:I13   months — key, label, in (after HST), living, house, lent+saved,
+ *            net, spending in CAD accounts, spending in INR accounts
+ *   K1:Y12   groups — name, this month, last month, then one column per month
+ *            (N1:Y1 carry the month keys)
+ *   AA1:AC32 days 1–31 — cumulative living costs, this month and last month
+ *   AE1:AF11 top 10 categories over the last 3 months (living + house)
+ */
+function vzVizTab(ss) {
+  var sh = getTab(ss, VZ.TAB_VIZ) || ss.insertSheet(VZ.TAB_VIZ);
+  sh.clear();
+  var m = 'ARRAYFORMULA(IF($A2:$A13="","",';
+  var sumJ = function (k) { return 'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,$A2:$A13,_Calc!$J:$J,"' + k + '")'; };
+  var spendIn = function (cur) {
+    return 'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,$A2:$A13,_Calc!$G:$G,"' + cur + '",_Calc!$J:$J,"Living")+' +
+           'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,$A2:$A13,_Calc!$G:$G,"' + cur + '",_Calc!$J:$J,"House")';
+  };
+  sh.getRange('A1:I1').setValues([['Month', 'Month ', 'Money in (after HST)', 'Living costs', 'House construction',
+                                   'Lent / saved', 'Net', 'Spent in Canada (CAD)', 'Spent in India (CAD)']]);
+  // From the first month with data up to this month, at most VZ.MONTHS of them.
+  sh.getRange('A2').setFormula('=ARRAYFORMULA(LET(t,DATE(YEAR(TODAY()),MONTH(TODAY()),1),m0,MIN(_Calc!A2:A),' +
+    'f,IF(m0=0,t,DATE(YEAR(m0),MONTH(m0),1)),n,MAX(1,MIN(' + VZ.MONTHS + ',DATEDIF(f,t,"M")+1)),' +
+    'd,DATE(YEAR(t),MONTH(t)+SEQUENCE(n,1,1-n),1),HSTACK(TEXT(d,"yyyy-mm"),TEXT(d,"mmm yy"))))');
+  sh.getRange('C2').setFormula('=' + m + sumJ('Income') + '-SUMIFS(_Calc!$H:$H,_Calc!$I:$I,"Business income",_Calc!$B:$B,$A2:$A13)*' +
+                               VZ_HST + '/(1+' + VZ_HST + ')))');
+  sh.getRange('D2').setFormula('=' + m + sumJ('Living') + '))');
+  sh.getRange('E2').setFormula('=' + m + sumJ('House') + '))');
+  sh.getRange('F2').setFormula('=' + m + sumJ('Lent') + '+' + sumJ('Saved') + '))');
+  sh.getRange('G2').setFormula('=ARRAYFORMULA(IF($A2:$A13="","",C2:C13-D2:D13-E2:E13-F2:F13))');
+  sh.getRange('H2').setFormula('=' + m + spendIn('CAD') + '))');
+  sh.getRange('I2').setFormula('=' + m + spendIn('INR') + '))');
+
+  // Groups × months. Negative totals (a refund month) are drawn as zero in the donut.
+  sh.getRange('K1:M1').setValues([['Group', 'This month', 'Last month']]);
+  sh.getRange(2, 11, VZ.GROUPS.length, 1).setValues(VZ.GROUPS.map(function (g) { return [g]; }));
+  var gr = 'K2:K' + (VZ.GROUPS.length + 1);
+  var byGroup = function (mk) {
+    return '=ARRAYFORMULA(LET(v,SUMIFS(_Calc!$L:$L,_Calc!$K:$K,' + gr + ',_Calc!$B:$B,' + mk + '),IF(v<0,0,v)))';
+  };
+  sh.getRange('L2').setFormula(byGroup('TEXT(TODAY(),"yyyy-mm")'));
+  sh.getRange('M2').setFormula(byGroup('TEXT(EDATE(TODAY(),-1),"yyyy-mm")'));
+  sh.getRange('N1').setFormula('=TRANSPOSE(A2:A13)');
+  sh.getRange('N2').setFormula('=MAKEARRAY(' + VZ.GROUPS.length + ',' + VZ.MONTHS + ',LAMBDA(i,j,LET(g,INDEX(' + gr + ',i),k,INDEX(N1:Y1,1,j),' +
+    'IF(OR(g="",k=""),"",SUMIFS(_Calc!$L:$L,_Calc!$K:$K,g,_Calc!$B:$B,k)))))');
+
+  // Spending pace: running total of living costs by day of the month.
+  sh.getRange('AA1:AC1').setValues([['Day', 'This month', 'Last month']]);
+  sh.getRange('AA2').setFormula('=SEQUENCE(31)');
+  var start0 = 'EOMONTH(TODAY(),-1)+1', start1 = 'EOMONTH(TODAY(),-2)+1';
+  sh.getRange('AB2').setFormula('=ARRAYFORMULA(IF(AA2:AA32>DAY(TODAY()),NA(),SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Living",' +
+    '_Calc!$A:$A,">="&' + start0 + ',_Calc!$A:$A,"<"&(' + start0 + '+AA2:AA32))))');
+  sh.getRange('AC2').setFormula('=ARRAYFORMULA(IF(AA2:AA32>DAY(EOMONTH(TODAY(),-1)),NA(),SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Living",' +
+    '_Calc!$A:$A,">="&' + start1 + ',_Calc!$A:$A,"<"&(' + start1 + '+AA2:AA32))))');
+
+  // Top categories, last 3 months including this one.
+  sh.getRange('AE1').setFormula('=IFERROR(QUERY(_Calc!A2:M,"select I, sum(L) where (J = \'Living\' or J = \'House\') and I <> \'\' and B >= \'"&' +
+    'TEXT(EDATE(TODAY(),-2),"yyyy-mm")&"\' group by I order by sum(L) desc limit 10 label I \'Category\', sum(L) \'Last 3 months\'",0),' +
+    '{"Category","Last 3 months";"(no spending yet)",0})');
+
+  if (!sh.isSheetHidden()) sh.hideSheet();
+  return sh;
+}
+
+/** How many months the _Viz month table holds right now. */
+function vzMonthCount(ss) {
+  var sh = getTab(ss, VZ.TAB_VIZ);
+  if (!sh) return 0;
+  return sh.getRange('A2:A13').getValues().filter(function (r) { return r[0] !== ''; }).length;
+}
+
+
+/* ---- Overview ------------------------------------------------------------------- */
+
+function vzOverviewTab(ss) {
+  var sh = getTab(ss, VZ.TAB_OVERVIEW) || ss.insertSheet(VZ.TAB_OVERVIEW, 0);
+  sh.getCharts().forEach(function (c) { sh.removeChart(c); });
+  sh.clear();
+  sh.clearConditionalFormatRules();
+  sh.getRange('A1:L200').breakApart();
+  for (var c = 1; c <= 12; c++) sh.setColumnWidth(c, 105);
+  sh.setHiddenGridlines(true);
+
+  sh.getRange('A1').setValue('📈 Overview — your money at a glance').setFontSize(18).setFontWeight('bold').setFontColor(VZ.C.ink);
+  sh.getRange('A2').setFormula('="Live · "&TEXT(NOW(),"ddd d mmm yyyy, HH:mm")&" · all amounts in CAD · INR converted at the rate on the Categories tab"')
+    .setFontColor(VZ.C.grey);
+  sh.getRange('A3').setFormula('=Dashboard!A3').setFontColor(VZ.C.grey).setFontStyle('italic');
+
+  // Tiles: label / big number / comparison, two columns each.
+  var D = 'Dashboard!';
+  var tiles = [
+    ['Money in this month (after HST)', '=' + D + 'B7', '="Last month "&TEXT(' + D + 'B8,"$#,##0")', VZ.C.in],
+    ['Living costs this month',         '=' + D + 'C7', '="Last month "&TEXT(' + D + 'C8,"$#,##0")', VZ.C.living],
+    ['House construction this month',   '=' + D + 'D7', '="Last month "&TEXT(' + D + 'D8,"$#,##0")', VZ.C.house],
+    ['Net this month',                  '=' + D + 'F7', '="Last month "&TEXT(' + D + 'F8,"$#,##0;-$#,##0")', VZ.C.net],
+    ['Kept of what came in',            '=IF(' + D + 'B7>0,' + D + 'F7/' + D + 'B7,"—")',
+                                        '=IF(' + D + 'B8>0,"Last month "&TEXT(' + D + 'F8/' + D + 'B8,"0%"),"")', VZ.C.net],
+    ['Still to pay this month',         '=-' + D + 'B18', '="Still to come in "&TEXT(' + D + 'B19,"$#,##0")', VZ.C.living]
+  ];
+  tiles.forEach(function (t, i) {
+    var col = 1 + i * 2;
+    [5, 6, 7].forEach(function (r) { sh.getRange(r, col, 1, 2).merge(); });
+    sh.getRange(5, col).setValue(t[0]).setFontColor(VZ.C.grey).setFontSize(9);
+    sh.getRange(6, col).setFormula(t[1]).setFontSize(20).setFontWeight('bold').setFontColor(t[3])
+      .setNumberFormat(i === 4 ? '0%' : '$#,##0;-$#,##0');
+    sh.getRange(7, col).setFormula(t[2]).setFontColor(VZ.C.grey).setFontSize(9);
+    sh.getRange(5, col, 3, 2).setBackground(VZ.C.tile).setHorizontalAlignment('left')
+      .setBorder(true, true, true, true, false, false, '#dadce0', SpreadsheetApp.BorderStyle.SOLID);
+  });
+  sh.setRowHeight(6, 38);
+
+  // Per-group trend table, to the right of the third row of charts.
+  var r0 = 43, g0 = 7;
+  sh.getRange(r0, g0, 1, 6).setValues([['Spending group', 'This month', 'Last month', 'Avg / month', 'Trend', 'Share this month']])
+    .setFontWeight('bold').setBackground(VZ.C.band);
+  VZ.GROUPS.forEach(function (g, i) {
+    var r = r0 + 1 + i, vr = i + 2;
+    sh.getRange(r, g0).setValue(g);
+    sh.getRange(r, g0 + 1).setFormula('=SUMIFS(_Calc!$L:$L,_Calc!$K:$K,$G' + r + ',_Calc!$B:$B,TEXT(TODAY(),"yyyy-mm"))');
+    sh.getRange(r, g0 + 2).setFormula('=SUMIFS(_Calc!$L:$L,_Calc!$K:$K,$G' + r + ',_Calc!$B:$B,TEXT(EDATE(TODAY(),-1),"yyyy-mm"))');
+    sh.getRange(r, g0 + 3).setFormula('=IFERROR(AVERAGE(FILTER(_Viz!N' + vr + ':Y' + vr + ',_Viz!N$1:Y$1<>"")),0)');
+    sh.getRange(r, g0 + 4).setFormula('=IFERROR(SPARKLINE(FILTER(_Viz!N' + vr + ':Y' + vr + ',_Viz!N$1:Y$1<>""),' +
+      '{"charttype","column";"color","' + VZ.C.net + '";"negcolor","' + VZ.C.in + '"}),"")');
+    sh.getRange(r, g0 + 5).setFormula('=IF(H' + r + '<=0,"",SPARKLINE(H' + r + ',{"charttype","bar";"max",MAX(1,MAX(H$' + (r0 + 1) +
+      ':H$' + (r0 + VZ.GROUPS.length) + '));"color1","' + VZ.C.house + '"}))');
+  });
+  var gEnd = r0 + VZ.GROUPS.length;
+  sh.getRange(r0 + 1, g0 + 1, VZ.GROUPS.length, 3).setNumberFormat('$#,##0;[Red]-$#,##0');
+  sh.getRange(gEnd + 1, g0).setValue('Total').setFontWeight('bold');
+  ['H', 'I', 'J'].forEach(function (L, i) {
+    sh.getRange(gEnd + 1, g0 + 1 + i).setFormula('=SUM(' + L + (r0 + 1) + ':' + L + gEnd + ')').setNumberFormat('$#,##0').setFontWeight('bold');
+  });
+  sh.getRange(gEnd + 3, g0).setValue('Trend = one bar per month, oldest on the left. Green bars are months where money came back (a refund or a repayment).')
+    .setFontColor(VZ.C.grey).setFontStyle('italic').setFontSize(9);
+
+  // How to read it, under the charts.
+  var how = [
+    'How to read this page',
+    '• Tiles: this month so far. "Kept of what came in" = net ÷ money in.',
+    '• Money in vs out: green = money in after HST, red = living costs, yellow = house; the blue line is what was left (net).',
+    '• Where it went: this month\'s spending by group. Card payments and transfers between your own accounts are left out.',
+    '• Top categories: the ten biggest over the last 3 months — where trimming pays most.',
+    '• Spending pace: living costs added up day by day. Blue above grey = spending faster than last month.',
+    '• Canada vs India: what was spent from CAD accounts vs INR accounts, all in CAD.',
+    '• More: Trends (every category, month by month) · Accounts (is every account up to date) · Dashboard (what to pay).'
+  ];
+  sh.getRange(62, 1, how.length, 1).setValues(how.map(function (h) { return [h]; })).setFontColor(VZ.C.grey);
+  sh.getRange(62, 1).setFontWeight('bold').setFontColor(VZ.C.ink);
+  sh.setFrozenRows(3);
+  return sh;
+}
+
+/** Links to the other tabs, written once their ids are known. */
+function vzOverviewLinks(ss) {
+  var sh = getTab(ss, VZ.TAB_OVERVIEW);
+  if (!sh) return;
+  var link = function (name, label) {
+    var t = getTab(ss, name);
+    return t ? 'HYPERLINK("#gid=' + t.getSheetId() + '","' + label + '")' : '"' + label + '"';
+  };
+  sh.getRange('I1').setFormula('=' + link(PLAN.TAB_DASH, '🧾 What to pay →')).setFontWeight('bold');
+  sh.getRange('J1').setFormula('=' + link(VZ.TAB_TRENDS, '📊 Trends →')).setFontWeight('bold');
+  sh.getRange('K1').setFormula('=' + link(VZ.TAB_ACCOUNTS, '🏦 Accounts →')).setFontWeight('bold');
+  sh.getRange('L1').setFormula('=' + link(PLAN.TAB_COMMIT, '🔁 Commitments →')).setFontWeight('bold');
+}
+
+/** Re-draw the five charts so their ranges match the months on record. */
+function vzOverviewCharts(ss) {
+  var sh = getTab(ss, VZ.TAB_OVERVIEW), viz = getTab(ss, VZ.TAB_VIZ);
+  if (!sh || !viz) return;
+  sh.getCharts().forEach(function (c) { sh.removeChart(c); });
+  var n = Math.max(1, vzMonthCount(ss));
+  var W = 625, H = 330;
+  var base = function (type, row, col, title) {
+    return sh.newChart().setChartType(type).setPosition(row, col, col === 1 ? 0 : 5, 0)
+      .setHiddenDimensionStrategy(Charts.ChartHiddenDimensionStrategy.SHOW_BOTH)
+      .setNumHeaders(1).setOption('title', title).setOption('width', W).setOption('height', H)
+      .setOption('titleTextStyle', { fontSize: 13, bold: true, color: VZ.C.ink })
+      .setOption('legend', { position: 'bottom' });
+  };
+
+  sh.insertChart(base(Charts.ChartType.COMBO, 9, 1, 'Money in vs out — month by month')
+    .addRange(viz.getRange(1, 2, n + 1, 4)).addRange(viz.getRange(1, 7, n + 1, 1))
+    .setOption('seriesType', 'bars')
+    .setOption('series', { 3: { type: 'line', lineWidth: 3, pointSize: 6 } })
+    .setOption('colors', [VZ.C.in, VZ.C.living, VZ.C.house, VZ.C.net])
+    .setOption('vAxis', { format: '$#,##0' }).build());
+
+  sh.insertChart(base(Charts.ChartType.PIE, 9, 7, 'Where it went — this month so far')
+    .addRange(viz.getRange(1, 11, VZ.GROUPS.length + 1, 2))
+    .setOption('pieHole', 0.45).setOption('pieSliceText', 'percentage')
+    .setOption('legend', { position: 'right' }).build());
+
+  sh.insertChart(base(Charts.ChartType.BAR, 26, 1, 'Top 10 categories — last 3 months')
+    .addRange(viz.getRange('AE1:AF11'))
+    .setOption('colors', [VZ.C.living]).setOption('legend', { position: 'none' })
+    .setOption('hAxis', { format: '$#,##0' }).build());
+
+  sh.insertChart(base(Charts.ChartType.LINE, 26, 7, 'Spending pace — living costs, running total')
+    .addRange(viz.getRange('AA1:AC32'))
+    .setOption('colors', [VZ.C.net, '#9aa0a6']).setOption('lineWidth', 3)
+    .setOption('hAxis', { title: 'Day of the month' }).setOption('vAxis', { format: '$#,##0' }).build());
+
+  sh.insertChart(base(Charts.ChartType.COLUMN, 43, 1, 'Canada vs India — spending by month (CAD)')
+    .addRange(viz.getRange(1, 2, n + 1, 1)).addRange(viz.getRange(1, 8, n + 1, 2))
+    .setOption('isStacked', true).setOption('colors', [VZ.C.cad, VZ.C.inr])
+    .setOption('vAxis', { format: '$#,##0' }).build());
+}
+
+
+/* ---- Trends --------------------------------------------------------------------- */
+
+function vzTrendsTab(ss) {
+  var sh = getTab(ss, VZ.TAB_TRENDS) || ss.insertSheet(VZ.TAB_TRENDS);
+  sh.clear();
+  sh.clearConditionalFormatRules();
+  var last = 4 + VZ.CAT_ROWS;                         // last data row
+  sh.getRange('A1').setValue('📊 Trends — every spending category, month by month (CAD)').setFontSize(16).setFontWeight('bold');
+  sh.getRange('A2').setValue('Darker red = more money. The Trend column is one bar per month, oldest on the left. ' +
+    'Card payments and transfers between your accounts are left out; income is on the Overview.').setFontColor(VZ.C.grey);
+
+  // Row 3 holds the month keys the sums use (hidden); row 4 the readable labels.
+  sh.getRange('C3').setFormula('=TRANSPOSE(_Viz!A2:A13)');
+  sh.getRange('A4:B4').setValues([['Group', 'Category']]);
+  sh.getRange('C4').setFormula('=TRANSPOSE(_Viz!B2:B13)');
+  sh.getRange('O4:Q4').setValues([['Total', 'Avg / month', 'Trend']]);
+  sh.getRange(4, 1, 1, 17).setFontWeight('bold').setBackground(VZ.C.band);
+
+  // Every spending category, in Dashboard group order. Unlabelled rows show as "(not labelled)".
+  sh.getRange('A5').setFormula('=IFERROR(LET(u,UNIQUE(FILTER({_Calc!K2:K,ARRAYFORMULA(IF(_Calc!I2:I="","(not labelled)",_Calc!I2:I))},' +
+    '_Calc!A2:A<>"",_Calc!J2:J<>"Moved",_Calc!J2:J<>"Income")),' +
+    'ARRAY_CONSTRAIN(SORT(u,IFERROR(MATCH(INDEX(u,,1),' + fxOrder() + ',0),99),TRUE,INDEX(u,,2),TRUE),' + VZ.CAT_ROWS + ',2)),"")');
+  sh.getRange('C5').setFormula('=MAKEARRAY(' + VZ.CAT_ROWS + ',' + VZ.MONTHS + ',LAMBDA(i,j,LET(cat,INDEX(B5:B' + last + ',i),k,INDEX(C3:N3,1,j),' +
+    'IF(OR(cat="",k=""),"",SUMIFS(_Calc!$L:$L,_Calc!$I:$I,IF(cat="(not labelled)","",cat),_Calc!$B:$B,k,' +
+    '_Calc!$J:$J,"<>Moved",_Calc!$J:$J,"<>Income")))))');
+  sh.getRange('O5').setFormula('=BYROW(C5:N' + last + ',LAMBDA(r,IF(COUNT(r)=0,"",SUM(r))))');
+  sh.getRange('P5').setFormula('=BYROW(C5:N' + last + ',LAMBDA(r,IF(COUNT(r)=0,"",SUM(r)/COUNT(r))))');
+  var spark = [];
+  for (var r = 5; r <= last; r++) {
+    spark.push(['=IF(B' + r + '="","",IFERROR(SPARKLINE(FILTER(C' + r + ':N' + r + ',C$3:N$3<>""),' +
+                '{"charttype","column";"color","' + VZ.C.net + '";"negcolor","' + VZ.C.in + '"}),""))']);
+  }
+  sh.getRange(5, 17, VZ.CAT_ROWS, 1).setFormulas(spark);
+
+  sh.getRange(5, 3, VZ.CAT_ROWS, 14).setNumberFormat('$#,##0;-$#,##0;""');
+  sh.getRange(5, 1, VZ.CAT_ROWS, 1).setFontColor(VZ.C.grey);
+  sh.getRange(5, 15, VZ.CAT_ROWS, 1).setFontWeight('bold');
+  sh.setRowHeight(3, 2);
+  sh.hideRows(3);
+  sh.setFrozenRows(4);
+  sh.setFrozenColumns(2);
+  sh.setColumnWidth(1, 150); sh.setColumnWidth(2, 190);
+  for (var c = 3; c <= 16; c++) sh.setColumnWidth(c, 78);
+  sh.setColumnWidth(17, 130);
+
+  // Heatmap over the month columns; the 95th percentile keeps one big month from washing out the rest.
+  var heat = SpreadsheetApp.newConditionalFormatRule().setRanges([sh.getRange(5, 3, VZ.CAT_ROWS, VZ.MONTHS)])
+    .setGradientMinpointWithValue('#ffffff', SpreadsheetApp.InterpolationType.NUMBER, '0')
+    .setGradientMaxpointWithValue('#e67c73', SpreadsheetApp.InterpolationType.PERCENTILE, '95').build();
+  // A faint line where a new group starts.
+  var band = SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($A5<>"",$A5<>$A4)')
+    .setRanges([sh.getRange(5, 1, VZ.CAT_ROWS, 2)]).setBold(true).setFontColor(VZ.C.ink).build();
+  sh.setConditionalFormatRules([heat, band]);
+  return sh;
+}
+
+
+/* ---- Accounts ------------------------------------------------------------------- */
+
+function vzAccountsTab(ss) {
+  var sh = getTab(ss, VZ.TAB_ACCOUNTS) || ss.insertSheet(VZ.TAB_ACCOUNTS);
+  sh.clear();
+  sh.clearConditionalFormatRules();
+  var n = VZ.ACCT_ROWS, A = 'A4:A' + (3 + n);
+  sh.getRange('A1').setValue('🏦 Accounts — is everything up to date?').setFontSize(16).setFontWeight('bold');
+  sh.getRange('A2').setValue('Statements up to = the newest transaction on file. Over ' + FX.STALE_DAYS +
+    ' days behind turns red: upload that account to the Inbox. Balances are in the account\'s own currency, from the last statement that carried one.')
+    .setFontColor(VZ.C.grey);
+  sh.getRange('A3:L3').setValues([['Account', 'Currency', 'First on file', 'Statements up to', 'Days behind', 'Transactions',
+    'In this month (CAD)', 'Out this month (CAD)', 'Last known balance', 'Balance as of', 'Spending, last 6 months', 'Status']])
+    .setFontWeight('bold').setBackground(VZ.C.band);
+
+  var by = function (body) { return '=BYROW(' + A + ',LAMBDA(a,IF(a="","",' + body + ')))'; };
+  var m0 = 'TEXT(TODAY(),"yyyy-mm")';
+  sh.getRange('A4').setFormula('=IFERROR(ARRAY_CONSTRAIN(SORT(UNIQUE(FILTER(_Calc!C2:C,_Calc!C2:C<>""))),' + n + ',1),"")');
+  sh.getRange('B4').setFormula(by('IFERROR(INDEX(FILTER(_Calc!G2:G,_Calc!C2:C=a),1),"")'));
+  sh.getRange('C4').setFormula(by('MINIFS(_Calc!A2:A,_Calc!C2:C,a)'));
+  sh.getRange('D4').setFormula(by('MAXIFS(_Calc!A2:A,_Calc!C2:C,a)'));
+  sh.getRange('E4').setFormula(by('TODAY()-MAXIFS(_Calc!A2:A,_Calc!C2:C,a)'));
+  sh.getRange('F4').setFormula(by('COUNTIF(_Calc!C2:C,a)'));
+  sh.getRange('G4').setFormula(by('SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!B2:B,' + m0 + ',_Calc!H2:H,">0")'));
+  sh.getRange('H4').setFormula(by('-SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!B2:B,' + m0 + ',_Calc!H2:H,"<0")'));
+  sh.getRange('I4').setFormula(by('IFERROR(INDEX(SORT(FILTER({ARRAYFORMULA(TEXT(_Balances!D2:D,"yyyy-mm-dd")),_Balances!E2:E},_Balances!C2:C=a),1,FALSE),1,2),"—")'));
+  sh.getRange('J4').setFormula(by('IFERROR(INDEX(SORT(FILTER(ARRAYFORMULA(TEXT(_Balances!D2:D,"yyyy-mm-dd")),_Balances!C2:C=a),1,FALSE),1,1),"")'));
+  var spark = [];
+  for (var r = 4; r < 4 + n; r++) {
+    spark.push(['=IF(A' + r + '="","",IFERROR(SPARKLINE(MAKEARRAY(1,6,LAMBDA(i,j,-SUMIFS(_Calc!$H:$H,_Calc!$C:$C,A' + r +
+                ',_Calc!$B:$B,TEXT(EDATE(TODAY(),j-6),"yyyy-mm"),_Calc!$H:$H,"<0",_Calc!$J:$J,"<>Moved"))),' +
+                '{"charttype","column";"color","' + VZ.C.living + '"}),""))']);
+  }
+  sh.getRange(4, 11, n, 1).setFormulas(spark);
+  sh.getRange('L4').setFormula(by('IF(TODAY()-MAXIFS(_Calc!A2:A,_Calc!C2:C,a)>' + FX.STALE_DAYS + ',"⚠ Upload a new statement","✅ Up to date")'));
+
+  sh.getRange(4, 3, n, 2).setNumberFormat('yyyy-mm-dd');
+  sh.getRange(4, 5, n, 2).setNumberFormat('0');
+  sh.getRange(4, 7, n, 2).setNumberFormat('$#,##0.00');
+  sh.getRange(4, 9, n, 1).setNumberFormat('#,##0.00');
+  [210, 75, 100, 115, 90, 95, 130, 130, 130, 105, 170, 190].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  var stale = sh.getRange(4, 1, n, 12);
+  sh.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER($E4),$E4>' + FX.STALE_DAYS + ')')
+      .setRanges([stale]).setBackground('#fce8e6').build(),
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER($E4),$E4<=' + FX.STALE_DAYS + ')')
+      .setRanges([sh.getRange(4, 12, n, 1)]).setBackground('#e6f4ea').build()
+  ]);
+  sh.setFrozenRows(3);
+  sh.setFrozenColumns(1);
+  return sh;
+}
+
+
+/* ---- putting it together -------------------------------------------------------- */
+
+/** Tabs in the order you use them; filter row on Transactions. */
+function vzArrange(ss) {
+  [VZ.TAB_OVERVIEW, PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, VZ.TAB_TRENDS, VZ.TAB_ACCOUNTS, CFG.TAB_PAYEES, FX.CATS]
+    .forEach(function (name, i) {
+      var sh = getTab(ss, name);
+      if (!sh) return;
+      ss.setActiveSheet(sh);
+      ss.moveActiveSheet(i + 1);
+    });
+  var tx = getTab(ss, CFG.TAB_TX);
+  if (tx && !tx.getFilter() && tx.getLastRow() > 1) tx.getRange(1, 1, tx.getLastRow(), CFG.COLS.length).createFilter();
+  if (tx) tx.setFrozenRows(1);
+  ss.setActiveSheet(getTab(ss, VZ.TAB_OVERVIEW));
+}
+
+/** Rebuild the three tabs (on a version change). */
+function vzInstall(ss) {
+  vzVizTab(ss);
+  vzOverviewTab(ss);
+  vzTrendsTab(ss);
+  vzAccountsTab(ss);
+  vzOverviewLinks(ss);
+  vzArrange(ss);
+}
