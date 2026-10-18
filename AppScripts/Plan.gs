@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-18.5',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-18.6',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -657,6 +657,7 @@ function refreshDashboard(ss, quick) {
     planPayeesOnce(ss);
     planPayeesV2Once(ss);
     planPayeesV3Once(ss);
+    planFillCategoriesOnce(ss, 'plan_fill_cats_v1', PLAN_PAYEES_V2.concat(PLAN_PAYEES_V3));
     planPayWeeklyOnce(commitSh);
   }
   // The script still reads the data for two jobs a formula cannot do:
@@ -809,6 +810,31 @@ var PLAN_PAYEES_V3 = [
 
 function planPayeesV3Once(ss) {
   planPayeesBatch(ss, 'plan_payees_v3', PLAN_PAYEES_V3);
+}
+
+/**
+ * Once: UPI lines are given the recipient's name at ingest with category
+ * "Unknown - check", and relabelAll leaves any row whose payee is set alone.
+ * For rows whose category is still blank or "Unknown - check", take the
+ * category from the first of these Payees rows that matches. The payee name
+ * and every row that already has a real category are left as they are.
+ */
+function planFillCategoriesOnce(ss, key, rows) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty(key)) return;
+  var sh = getTab(ss, CFG.TAB_TX);
+  if (!sh || sh.getLastRow() < 2) return;
+  var res = rows.map(function (p) { return { re: new RegExp(p[0], 'i'), cat: p[2] }; });
+  var rg = sh.getRange(2, 10, sh.getLastRow() - 1, 1), cats = rg.getValues();
+  var desc = sh.getRange(2, 5, sh.getLastRow() - 1, 1).getValues();
+  var changed = 0;
+  cats.forEach(function (c, i) {
+    if (c[0] !== '' && !/^unknown - check$/i.test(String(c[0]))) return;
+    var hit = res.filter(function (p) { return p.re.test(String(desc[i][0])); })[0];
+    if (hit) { c[0] = hit.cat; changed++; }
+  });
+  if (changed) rg.setValues(cats);
+  props.setProperty(key, new Date().toISOString());
 }
 
 /** Append Payees rows not already there (once per key), then label rows still unlabelled. */
