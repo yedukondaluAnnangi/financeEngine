@@ -9,6 +9,44 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-18 (later) — Labelling clean-up; payments behind each Overview tile
+
+**Asked:** what "Not labelled yet" means; then: show the payments behind each
+Overview number (living costs, still to pay, house), how much is in the
+accounts, how money should be spent and how it was spent.
+
+**Labelling:** 96 transactions had no category (own transfers and Remitly
+arrivals were mixed into living costs — the cause of October's negative India
+spending). New `To label` tab lists them. One-time upkeep steps in `Plan.gs`:
+`planPayeesV2Once` (31 clear-cut Payees rows), `planPayeesV3Once` (owner's
+answers: TD "SEND E-TFR" = owner draw, India UPI builders = construction,
+Swapna UPI credits = CAD→INR exchange, Mills Motors = new category
+"Car purchase" → Saved / invested), `planFillCategoriesOnce` (UPI rows get a
+payee name at ingest with category "Unknown - check", which `relabelAll`
+skips). 96 → 9 left (PhonePe ×3, Jade Institutes, ST399, Shelbys, Muthoot
+interest ×2, a TD mobile deposit).
+
+**Overview details (`Viz.gs › vzOverviewDetails`, rows 72–131):** plan vs so far,
+cash and bank balances, still to pay this month (each bill), money in (each
+deposit), living costs by payee (top 25), house payments this month + total
+so far. Tile row 8 links jump to each list.
+
+**Bugs this session:**
+- Pushed a JS syntax error once (unescaped quotes in a QUERY string); a
+  `node … | head` pipeline hid node's failure. Use `set -o pipefail` before
+  chaining a test and a push. Live ~1 minute.
+- `applyRowBanding` refused an overlap on the real sheet that a clean mock did
+  not reproduce; `thBand` now removes any banding already on the range first and
+  names the tab/range in its error.
+
+**Verification trick:** hidden `_Peek` tab — row 1 the unlabelled groups, row 2
+the first rows of each Overview detail list, row 3 the newest `_Issues` note in
+80-char pieces. The Drive connector only samples the first rows of each tab.
+
+**Open:** the 9 unlabelled rows; Assets & Debts amounts; sheets-cli re-login.
+
+---
+
 ## 2026-10-18 — One theme for every tab; Balance Sheet and Assets & Debts
 
 **Asked:** make Dashboard, Commitments, Trends and every other tab except
