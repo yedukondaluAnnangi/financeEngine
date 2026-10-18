@@ -9,6 +9,51 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-18 — One theme for every tab; Balance Sheet and Assets & Debts
+
+**Asked:** make Dashboard, Commitments, Trends and every other tab except
+Transactions more attractive; add a balance sheet / assets view.
+
+**Theme (`Theme.gs`, new):** navy header rows, darker section bands, zebra rows
+(`applyRowBanding`), Roboto, hidden gridlines on report tabs.
+- Dashboard: formats only (`thDashboard`, block rows in `TH_DASH_BLOCKS`) — cell
+  positions unchanged because the monthly email reads fixed rows.
+- Commitments: navy headers on your columns A–L, green on formula columns M–AA;
+  colours for Decision (Keep/Cancel/Review/undecided), Status, In/Out, due in ≤3
+  days, still owed; cancelled / ended rows fade (`thCommitRules`, replaces the old
+  `fxCommitColours` body).
+- Payees and Categories: header + zebra only (user tabs: values never touched);
+  Payees D1 now labelled "Amount (optional)" (rows are read from row 2, safe).
+- Overview, Trends, Accounts restyled with the same helpers.
+
+**Balance sheet (`BalanceSheet.gs`, new):**
+- `Assets & Debts` — user input tab, created once with suggested rows and blank
+  amounts (investments, chequing balances whose CSV has none, loan balances owed,
+  car, gold). Never cleared. Column H is a formula (CAD).
+- `Balance Sheet` — rebuilt view: tiles (own / owe / net worth), assets and debts
+  lists, by-class donut, net-worth line, loan payments still to come (cash incl.
+  interest, explicitly *not* the balance owed). Automatic rows: last statement
+  balances (`_Balances`), house construction at cost, money lent (net, if
+  positive), card spend since last payment (Dashboard A54:B57), HST owed
+  (Dashboard B20). A user row with the same name replaces the automatic one.
+- `_NetWorth` (hidden) — one snapshot per day from `planDaily` (`bsSnapshot`).
+- Verified: first snapshot reconciles by hand with the automatic rows.
+
+**Gotcha (again):** LET names `a2`, `k2`, `n2`, `x2` are cell references and
+`left` is a function name — caught in review before deploy, renamed.
+
+**Open / for next time:**
+- User to fill amounts on `Assets & Debts` (8 rows blank) — until then net worth
+  is statements + house cost only.
+- Still open from 2026-10-17: negative October India spending (a money-in row
+  with a spending category), CIBC card payment Payees patterns, sheets-cli re-login.
+- Repo is public and some earlier commit messages / `Plan.gs` notes contain pay
+  figures — user was told; making the repo private is the clean fix.
+
+Commit: `95f5a1b`.
+
+---
+
 ## 2026-10-17 — Failed upload fixed; Overview / Trends / Accounts tabs
 
 **Asked:** an Apps Script email said an upload failed — find and fix it; correct
