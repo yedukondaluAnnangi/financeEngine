@@ -28,7 +28,13 @@ function thClearBands(sh) {
 
 /** Zebra rows on a block; the first row of the block is a header when header = true. */
 function thBand(range, header) {
-  var b = range.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, !!header, false);
+  var b;
+  try {
+    b = range.applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, !!header, false);
+  } catch (err) {
+    // Say where: Sheets' own message names neither the tab nor the range.
+    throw new Error('Banding ' + range.getSheet().getName() + '!' + range.getA1Notation() + ' — ' + err.message);
+  }
   b.setFirstRowColor('#ffffff').setSecondRowColor(TH.BAND);
   if (header) b.setHeaderRowColor(TH.NAVY);
   return b;
