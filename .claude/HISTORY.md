@@ -44,7 +44,22 @@ Verified live: banner "✅ Every account is up to date", ••680 shows 💤.
   (transfers into chequing) would be read as TD Business and fail C7, holding
   the batch. Moved that file out of the Inbox to the Bankstatements folder.
 
-**Open:** HDFC Savings still ends 16 Oct; second TD account not tracked; set Account on the car insurance
+**Habits are not bills (`c117c5e`):** the recurring-charge detector in
+`planAnalyse` had added cafés and convenience stores (charged in 2 months) as
+Commitments rows. It now skips groups in `PLAN_NOT_BILLS` (Lifestyle added);
+`planDropHabitRowsOnce` removed the 5 undecided "Found automatically" rows.
+Verified live: they are gone, the Spay utility row stays.
+
+**Explained (no change):** HST is deposit × 13/113, the same as pay × 13%;
+Dashboard row 20 is the amount to keep aside. HDFC Savings "Can't tell"
+items: home loan EMI bounced 5 Oct and was debited 14 Oct as "HL … DEBIT"
+at a higher amount; Kotak goes through PhonePe with no name; electricity
+via Bharat Connect; India rent paid as a double amount by NEFT. Match fixes
+wait on the owner's answers.
+
+**Open:** owner to confirm the four HDFC Savings payments, then update their
+Match / Amount on Commitments; optional "Tax to keep aside" box; HDFC Savings
+still ends 16 Oct; second TD account not tracked; set Account on the car insurance
 row; decide whether to delete Sheet4 / CarInsurance / Summary; Month Ahead's
 recurring list is missing car insurance, India rent and Wealthsimple.
 
