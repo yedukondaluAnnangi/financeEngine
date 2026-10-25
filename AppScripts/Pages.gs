@@ -124,7 +124,7 @@ function pgNowTab(ss) {
     sh.getRange(r, 4).setFormula('=IF(B' + r + '="","",B' + r + '*' + rate + ')');
     // Income on Commitments landing here in the window (weekly pay counted per payday).
     var z = PG_CM + 'Z2:Z200', e = PG_CM + 'E2:E200';
-    sh.getRange(r, 5).setFormula('=SUMPRODUCT(ARRAYFORMULA((' + PG_CM + 'G2:G200<>"")*ISNUMBER(SEARCH(' + PG_CM + 'G2:G200,' + nm + '))*(' + PG_CM + 'W2:W200="In")*(' + PG_CM + 'I2:I200<>"Cancel")*' +
+    sh.getRange(r, 5).setFormula('=SUMPRODUCT(ARRAYFORMULA((' + PG_CM + 'G2:G200<>"")*ISNUMBER(SEARCH(' + PG_CM + 'G2:G200,' + nm + '))*(' + PG_CM + 'W2:W200="In")*(' + PG_CM + 'I2:I200<>"Cancel")*(' + PG_CM + 'I2:I200<>"Later")*' +
       'IFERROR((' + z + '<>"")*(' + z + '<=' + PG.MOVE_DAYS + ')*IF(' + e + '="Weekly",INT((' + PG.MOVE_DAYS + '-' + z + ')/7)+1,IF(' + e + '="Biweekly",INT((' + PG.MOVE_DAYS + '-' + z + ')/14)+1,1))*' + PG_CM + 'M2:M200,0)))/' + rate);
     sh.getRange(r, 6).setFormula('=SUMIFS(' + LD + ',' + LA + ',' + nm + ',' + LB + ',' + within + ')');
     var mine = cards.filter(function (c) { return c.payFrom === b.name; });
@@ -179,7 +179,7 @@ function pgNowTab(ss) {
     'via,MAP(g,LAMBDA(x,IF(x="","",IF(IFERROR(ROWS(FILTER(' + BK + ',ISNUMBER(SEARCH(x,' + BK + ')))),0)>0,"",IFERROR(INDEX(FILTER(' + CD + ',ISNUMBER(SEARCH(x,' + CD + '))),1),""))))),' +
     'cur,MAP(own,LAMBDA(o,IFERROR(INDEX(FILTER(' + BC + ',' + BK + '=o),1),"CAD"))),' +
     'amt,MAP(cad,cur,LAMBDA(v,c,IF(ISNUMBER(v),v/IFERROR(VLOOKUP(c,Categories!$E:$F,2,0),1),""))),' +
-    'ok,(n<>"")*(dec<>"Cancel")*(io="Out"),' +
+    'ok,(n<>"")*(dec<>"Cancel")*(dec<>"Later")*(io="Out"),' +
     'late,ok*REGEXMATCH(st,"^(🔴|⏳ Due|📌)"),' +
     'soon,ok*IFERROR((z<>"")*(z<=' + PG.LIST_DAYS + '),0)*(1-REGEXMATCH(st,"^(Ended|✂)")),' +
     'when,IF(z=0,"🗓 today",IF(z=1,"🗓 tomorrow","🗓 in "&z&" days")),' +

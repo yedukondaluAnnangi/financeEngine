@@ -265,7 +265,7 @@ function vzOverviewDetails(sh) {
   section(S, 1, '🧾 Still to pay this month — every bill not seen paid yet');
   head(S + 1, 1, ['What', 'Due', 'CAD', 'Account', 'Status']);
   sh.getRange(sr, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({' + CM + 'A2:A,ARRAYFORMULA(IF(' + CM + 'R2:R="",' + CM + 'S2:S,' +
-    CM + 'R2:R)),' + CM + 'Y2:Y,' + CM + 'G2:G,' + CM + 'T2:T},' + CM + 'A2:A<>"",' + CM + 'W2:W="Out",' + CM + 'I2:I<>"Cancel",' +
+    CM + 'R2:R)),' + CM + 'Y2:Y,' + CM + 'G2:G,' + CM + 'T2:T},' + CM + 'A2:A<>"",' + CM + 'W2:W="Out",' + CM + 'I2:I<>"Cancel",' + CM + 'I2:I<>"Later",' +
     CM + 'Y2:Y>0),2,TRUE),' + sn + ',5),"✅ Nothing left to pay this month")');
   band(sr, 1, sn);
   sh.getRange(sr + sn, 1).setValue('Total still to pay').setFontWeight('bold');

@@ -105,7 +105,7 @@ function thCommitments(sh) {
   sh.getRange('A1').setNote('Everything that repeats: income, bills, loans, subscriptions, fees.\n\n' +
     'Green name = money that comes in (pay, benefits). Red name = money that goes out.\n' +
     'You fill A–L (navy headers). Columns M onward (green headers) work themselves out from your statements.\n' +
-    'The one decision that matters: Decision = Keep or Cancel for each cost.');
+    'The one decision that matters: Decision = Keep or Cancel for each cost (Later = parked for now).');
   sh.getRange('M1').setNote('Columns M onward (green headers) are formulas — don\'t type there. Yours are A–L (navy).');
   sh.setFrozenRows(1);
   sh.setFrozenColumns(1);
@@ -125,7 +125,7 @@ function thCommitRules(sh) {
   };
   sh.setConditionalFormatRules([
     // A cancelled or ended row fades out.
-    R().whenFormulaSatisfied('=AND($A2<>"",OR($I2="Cancel",LEFT($T2,5)="Ended"))').setRanges([all]).setFontColor('#9aa0a6').build(),
+    R().whenFormulaSatisfied('=AND($A2<>"",OR($I2="Cancel",$I2="Later",LEFT($T2,5)="Ended"))').setRanges([all]).setFontColor('#9aa0a6').build(),
     // Which way the money goes, on the name and the amount: green = comes in, red = goes out.
     R().whenFormulaSatisfied('=$W2="In"').setRanges([col(1), col(3)]).setBackground(TH.GOOD_BG).setFontColor(TH.GOOD).build(),
     R().whenFormulaSatisfied('=$W2="Out"').setRanges([col(1), col(3)]).setBackground('#fdf0ef').setFontColor(TH.BAD).build(),

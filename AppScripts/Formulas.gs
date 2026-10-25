@@ -203,7 +203,7 @@ function planRowFormulas(r) {
     'wb,SWITCH(f,"Weekly",3,"Biweekly",5,10),wa,SWITCH(f,"Weekly",3,"Biweekly",8,20),' +
     'cov,' + fxCoverage(r, 'MAX') + ',first,' + fxCoverage(r, 'MIN') + ',' +
     'IF(AND($K' + r + '<>"",$K' + r + '<t),"Ended",' +
-    'IF(dec="Cancel",IF(AND(lp<>"",$J' + r + '<>"",lp>$J' + r + '+2),"⚠ Charged after cancel ("&TEXT(lp,"mmm d")&")","✂ Cancelled"),' +
+    'IF(dec="Later","⏸ Parked for later",IF(dec="Cancel",IF(AND(lp<>"",$J' + r + '<>"",lp>$J' + r + '+2),"⚠ Charged after cancel ("&TEXT(lp,"mmm d")&")","✂ Cancelled"),' +
     'IF(AND(f="One-off",$F' + r + '=""),IF(lp<>"","✅ Paid "&TEXT(lp,"mmm d"),"📌 Owed — no date set"),' +
     'IF(c="",IF($S' + r + '="","—","⏳ First due "&TEXT($S' + r + ',"mmm d")),' +
     'IF(AND(lp<>"",lp>=c-wb),IF(inc,"✅ Received ","✅ Paid ")&TEXT(lp,"mmm d")&' +
@@ -214,10 +214,10 @@ function planRowFormulas(r) {
     'IF($G' + r + '="","❔ Not seen — set Account",' +
     'IF(cov>=c+wa,IF(inc,"🔴 Not received ","🔴 Not paid ")&TEXT(c,"mmm d"),' +
     'IF(t-c<=5,"⏳ Due "&TEXT(c,"mmm d"),' +
-    '"❔ Can\'t tell — "&$G' + r + '&IF(cov=0," has no statements yet"," data ends "&TEXT(cov,"mmm d")))))))))))))';
+    '"❔ Can\'t tell — "&$G' + r + '&IF(cov=0," has no statements yet"," data ends "&TEXT(cov,"mmm d"))))))))))))))';
 
   // Money due this calendar month: how many due dates fall in it × CAD each.
-  var U = '=IF(OR($A' + r + '="",$I' + r + '="Cancel"),0,IFERROR(ARRAYFORMULA(LET(t,TODAY(),s,DATE(YEAR(t),MONTH(t),1),e,EOMONTH(t,0),' + common +
+  var U = '=IF(OR($A' + r + '="",$I' + r + '="Cancel",$I' + r + '="Later"),0,IFERROR(ARRAYFORMULA(LET(t,TODAY(),s,DATE(YEAR(t),MONTH(t),1),e,EOMONTH(t,0),' + common +
     'days,SEQUENCE(DAY(e),1,s),valid,IF(isD,days>=d,TRUE)*IF($K' + r + '="",TRUE,days<=$K' + r + '),' +
     'n,SWITCH(f,' +
       '"Weekly",SUM(IF(isD,MOD(days-d,7)=0,WEEKDAY(days)=IFERROR(MATCH(LEFT(d,3),' + FX_WD + ',0),2))*valid),' +
@@ -231,7 +231,7 @@ function planRowFormulas(r) {
   var V = '=IF($A' + r + '="",0,IFERROR(ARRAYFORMULA(SUM(FILTER(' + net + ',' + ok + ',_Calc!$B$2:$B=TEXT(TODAY(),"yyyy-mm")))),0))';
   var W = '=' + blank + 'IF(IFERROR(VLOOKUP($H' + r + ',Categories!$A:$C,3,0),"")="Income","In","Out"))';
   var X = '=' + blank + 'IFERROR(VLOOKUP($H' + r + ',Categories!$A:$C,3,0),"Living"))';
-  var Y = '=' + blank + 'IF($I' + r + '="Cancel",0,MAX(0,$U' + r + '-$V' + r + ')))';
+  var Y = '=' + blank + 'IF(OR($I' + r + '="Cancel",$I' + r + '="Later"),0,MAX(0,$U' + r + '-$V' + r + ')))';
   var Z = '=IF(OR($A' + r + '="",$S' + r + '=""),"",$S' + r + '-TODAY())';
   var AA = '=IF($A' + r + '="",0,IFERROR(ARRAYFORMULA(SUM(FILTER(' + net + ',' + ok + ',_Calc!$B$2:$B=TEXT(EDATE(TODAY(),-1),"yyyy-mm")))),0))';
   return [M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, AA];
@@ -333,10 +333,10 @@ function fxDashboardCells() {
   var sumC = function (col, crit) { return 'SUMIFS(' + CM + col + '2:' + col + ',' + crit + ')'; };
   var plan = [
     ['Expected in', '=' + sumC('U', CM + 'W2:W,"In"'), 'Income on Commitments due this month'],
-    ['Committed bills & loans', '=-' + sumC('U', CM + 'W2:W,"Out",' + CM + 'I2:I,"<>Cancel",' + CM + 'X2:X,"<>House"'), 'Every Keep / undecided commitment due this month (house payments are below)'],
+    ['Committed bills & loans', '=-' + sumC('U', CM + 'W2:W,"Out",' + CM + 'I2:I,"<>Cancel",' + CM + 'I2:I,"<>Later",' + CM + 'X2:X,"<>House"'), 'Every Keep / undecided commitment due this month (house payments are below)'],
     ['Everyday spending', '=-MAX(0,SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"Living")-' + sumC('AA', CM + 'X2:X,"Living",' + CM + 'W2:W,"Out"') + ')', 'Last month\'s living costs minus the bills actually paid last month'],
     ['Left over', '=B12+B13+B14', ''],
-    ['House construction', '=-MAX(SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"House"),' + sumC('U', CM + 'X2:X,"House",' + CM + 'I2:I,"<>Cancel"') + ')',
+    ['House construction', '=-MAX(SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + FX_M1 + ',_Calc!$J:$J,"House"),' + sumC('U', CM + 'X2:X,"House",' + CM + 'I2:I,"<>Cancel",' + CM + 'I2:I,"<>Later"') + ')',
      'Last month\'s pace, or the house payments due this month if larger — a project, not a living cost'],
     ['Left over after the house', '=B15+B16', ''],
     ['Still to pay this month', '=-' + sumC('Y', CM + 'W2:W,"Out"'), 'Due this month and not seen paid yet'],
@@ -362,7 +362,7 @@ function fxDashboardCells() {
              'IF(LEFT(' + CM + 'T2:T,1)="❔"," · last cycle unconfirmed","")))';
   put(23, 1, '=IFERROR(ARRAY_CONSTRAIN(CHOOSECOLS(SORT(FILTER(ARRAYFORMULA({' + when + ',' + CM + 'A2:A,' + CM + 'M2:M,' +
              CM + 'C2:C&" "&' + CM + 'D2:D,' + what + ',' + CM + 'Z2:Z,' + CM + 'G2:G,' + CM + 'L2:L,' + key + '}),' +
-             CM + 'A2:A<>"",' + CM + 'I2:I<>"Cancel",' +
+             CM + 'A2:A<>"",' + CM + 'I2:I<>"Cancel",' + CM + 'I2:I<>"Later",' +
              'REGEXMATCH(' + CM + 'T2:T,"^(🔴|⏳|📌|⚠)")+IFERROR((' + CM + 'Z2:Z<=14)*(' + CM + 'Z2:Z<>"")*(1-REGEXMATCH(' + CM + 'T2:T,"^(Ended|✂)")),0)),' +
              '9,TRUE,1,TRUE),1,2,3,4,5,6,7,8),20,8),"Nothing due in the next 14 days")');
   styles.date.push([23, 1, 20, 1]); styles.money2.push([23, 3, 20, 1]);

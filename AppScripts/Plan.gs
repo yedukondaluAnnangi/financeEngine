@@ -31,14 +31,14 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-25.3',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-25.4',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
   COMMIT_COLS: ['Name', 'Match', 'Amount', 'Currency', 'Frequency', 'Due', 'Account',
                 'Category', 'Decision', 'Decided on', 'Ends', 'Notes'],
   FREQUENCIES: ['Monthly', 'Weekly', 'Biweekly', 'Quarterly', 'Half-yearly', 'Yearly', 'One-off'],
-  DECISIONS  : ['Keep', 'Cancel', 'Review'],
+  DECISIONS  : ['Keep', 'Cancel', 'Later', 'Review'],   // Later = parked: not due, not counted, not a saving
 
   /**
    * Category -> group, first match wins. A group decides where a row counts:
@@ -385,7 +385,7 @@ function planAnalyse(txValues, commitValues, opts) {
     });
 
     // A one-off with no date: owed until a matching payment shows up.
-    if (/^one-off$/i.test(c.freq) && !c.dueIso && c.decision !== 'Cancel' && !cands.length) {
+    if (/^one-off$/i.test(c.freq) && !c.dueIso && c.decision !== 'Cancel' && c.decision !== 'Later' && !cands.length) {
       M.dues.push({ name: c.name, date: '', cad: c.cad, amount: c.amount, cur: c.cur, income: c.income,
                     acct: c.acct, decision: c.decision, freq: c.freq, row: c.row, notes: c.notes, state: 'nodate' });
     }
@@ -454,7 +454,7 @@ function planAnalyse(txValues, commitValues, opts) {
 
   // ---- this month's plan -------------------------------------------------
   var monthEnd = thisMonth + '-' + ('0' + pLastDay(thisMonth)).slice(-2);
-  var mDues = M.dues.filter(function (d) { return d.date >= thisMonth + '-01' && d.date <= monthEnd && d.decision !== 'Cancel'; });
+  var mDues = M.dues.filter(function (d) { return d.date >= thisMonth + '-01' && d.date <= monthEnd && d.decision !== 'Cancel' && d.decision !== 'Later'; });
   var expectedIn = 0, committed = 0, remainingOut = 0, remainingIn = 0;
   mDues.forEach(function (d) {
     if (d.income) { expectedIn += d.cad; if (d.state !== 'paid') remainingIn += d.cad; }
@@ -941,7 +941,7 @@ function planCommitmentsTab(ss) {
     'Match: text (or a regex) found in the bank description or payee.\n' +
     'Due: day of month (Monthly), weekday (Weekly), or a date (Yearly, One-off, Biweekly anchor).\n' +
     'Account: which account pays it, e.g. RBC, Neo, HDFC Savings.\n' +
-    'Decision: Keep or Cancel — this is the Phase 2 decision. Blank = still to decide.\n' +
+    'Decision: Keep or Cancel — this is the Phase 2 decision. Later = parked for now (not due, not counted). Blank = still to decide.\n' +
     'Rows are added automatically when a new recurring charge appears. Add one-off payments you owe as One-off.');
   sh.getRange('I1').setNote('Keep or Cancel. The dashboard lists everything without a decision as "waiting for you".');
   return sh;
@@ -1024,7 +1024,7 @@ function planDigestHtml(ss) {
   // Same wording as the Dashboard: what needs you is shown with the date it
   // was due; anything else reads "in N days · last paid ...".
   var soon = rows.filter(function (c) {
-    return c.decision !== 'Cancel' &&
+    return c.decision !== 'Cancel' && c.decision !== 'Later' &&
            (/^(🔴|⏳|📌|⚠)/.test(c.status) || (c.inDays !== null && c.inDays <= 7 && !/^(Ended|✂)/.test(c.status)));
   }).map(function (c) {
     var attention = /^(🔴|⏳|📌|⚠)/.test(c.status);
