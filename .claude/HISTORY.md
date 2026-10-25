@@ -9,6 +9,41 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-25 (evening) — parked items, Expected payments tab, business grouping
+
+**Asked:** park two items until savings are planned; a monthly family-support
+payment; a tab Claude fills from WhatsApp / Gmail with payments the user promised,
+approved by the user before they count; group personal subscriptions apart from
+business costs for the tax return; why the Now tab seemed to ask for rent today.
+
+**Changed:**
+- `09c12ff` **Later** decision (PLAN.DECISIONS): status "⏸ Parked for later"; treated
+  like Cancel for every money total (U, Y, Dashboard plan, Now list, Viz, Plan.gs JS)
+  but not counted as a saving and not "waiting for a decision".
+- `8ad1a14` **Expected.gs** — input tab "Expected payments": Stage (Claude: Suggested /
+  Expected), Your decision (user: Approve / Reject), CAD + Status formulas. Status turns
+  "💸 Paid" when a matching outflow (±3%) appears on/after Found on. Approved, unpaid rows
+  join the Now list and money moves (third VSTACK set; owner/currency lambdas shared).
+- `0bdb3d3` group "Subscriptions" → "Personal subscriptions"; `/^business($|s*-)/`
+  → Business costs, so "Business - software / bank fees / advertising / registration &
+  licences" all count. Big picture §8: this year's business expenses by category + total.
+  Sheet data (sheets-cli, not code): Payees default categories, 22 Transactions rows,
+  Commitments H, Categories rows.
+- `1e13154` Now: "move by" date = next payment still ahead (an overdue one made it today).
+- Sheet data: family-support row made monthly with an outgoing-only Match (incoming
+  repayments from the same person would otherwise mark it paid); her incoming pattern
+  narrowed on Payees, outgoing gets its own pattern → Household.
+
+**Gotchas:** sheets-cli from Bash takes JSON `--values` fine; PowerShell 5.1 splits a
+quoted argument containing spaces (`too many arguments`). Node `spawnSync` with an args
+array is the reliable way to send many writes. Heredoc + JS template turns `\s` into
+`s` — check regexes after scripted edits.
+
+**Open:** first WhatsApp/Gmail scan for Expected payments; a TD "card / overdraft charge"
+is still personal Bank fees (pattern shared across accounts); RBC/CIBC balances.
+
+---
+
 ## 2026-10-25 (later) — Now and Big picture pages
 
 **Asked:** what to pay, how much cash is on hand, which transfers to make and
