@@ -9,6 +9,34 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-25 (later) — Now and Big picture pages
+
+**Asked:** what to pay, how much cash is on hand, which transfers to make and
+from which account — and one page for short-term things, one for long-term.
+
+**Built** `AppScripts/Pages.gs` (`d9970eb`, fix `43db08b`, VERSION 2026-10-25.3), two
+formula pages placed first in the tab order (old tabs kept visible — user's choice):
+- **Now**: per bank account balance (newest of `_Balances` and Assets & Debts), + income
+  due in 14 days, − payments due in 14 days, − card bills (cards counted on the account
+  that pays them), − HST to keep (on the `holdsHst` account) = spare, and a "move X from
+  <account with most spare> by <date>" line when short. Then cards, the 30-day payment list
+  grouped by paying account (overdue first, card-charged items show the card), paid this
+  month, statements older than 7 days.
+- **Big picture**: net worth tiles (Balance Sheet), loans (Commitments H = Loan; balance
+  owed from Assets & Debts), last 6 months, group pivot (Dashboard copy), house totals by
+  category, HST, savings summary.
+- `Config.gs`: cards gain `payFrom`, TD gains `holdsHst`.
+- Hooked into `planInstallFormulas` (fresh branch, own try/catch) and `vzArrange`.
+
+**Gotchas:** a header cell starting with "=" (e.g. "= Spare") is read as a formula →
+#NAME?. Local check: `$TMP/mock.js`-style vm run with a Proxy sheet mock that records
+setFormula and checks paren balance — caught nothing here but cheap.
+
+**Open:** RBC and CIBC balances must be typed on Assets & Debts for the Now tab to judge
+those accounts; loan balances owed likewise. ATM cash in India inflates "small habits".
+
+---
+
 ## 2026-10-25 — price changes on a bill were silent
 
 **Asked:** a subscription dropped to a cheaper plan; why did the sheet not notice?
