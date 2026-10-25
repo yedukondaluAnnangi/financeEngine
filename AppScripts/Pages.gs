@@ -138,7 +138,8 @@ function pgNowTab(ss) {
     sh.getRange(r, 11).setFormula('=IF(B' + r + '="","✍ Type today\'s balance on the Assets & Debts tab",' +
       'IF(I' + r + '>=0,"✅ Enough — ' + sym + '"&TEXT(I' + r + ',"#,##0")&" spare",' +
       'LET(best,IFERROR(INDEX(SORT(FILTER({$A$' + b0 + ':$A$' + bEnd + ',$J$' + b0 + ':$J$' + bEnd + '},ISNUMBER($J$' + b0 + ':$J$' + bEnd + '),$J$' + b0 + ':$J$' + bEnd + '>0),2,FALSE),1,1),"another account"),' +
-      'first,MINIFS(' + LB + ',' + LA + ',' + nm + ',' + LB + ',' + within + '),by,IF(first=0,TODAY(),MAX(TODAY(),first-' + lead + ')),' +
+      // The deadline follows the next payment still ahead; overdue ones are already late.
+      'first,MINIFS(' + LB + ',' + LA + ',' + nm + ',' + LB + ',' + within + ',' + LB + ',">="&TODAY()),by,IF(first=0,TODAY(),MAX(TODAY(),first-' + lead + ')),' +
       '"⚠ Short ' + sym + '"&TEXT(-I' + r + ',"#,##0")&" → move about "&TEXT(-J' + r + ',"$#,##0")&" from "&best&" by "&TEXT(by,"ddd d mmm"))))');
     sh.getRange(r, 2).setNumberFormat(pgFmt(b.cur));
     sh.getRange(r, 5, 1, 5).setNumberFormat(pgFmt(b.cur));
