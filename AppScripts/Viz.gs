@@ -27,7 +27,7 @@ var VZ = {
   CAT_ROWS: 96,                  // Trends: room for this many categories
   ACCT_ROWS: 20,                 // Accounts: room for this many accounts
   // Spending groups, in Dashboard order: everything except Income and Moved.
-  GROUPS: ['Bills & loans', 'Essentials', 'Lifestyle', 'Subscriptions', 'Fees & charges', 'Business costs',
+  GROUPS: ['Bills & loans', 'Essentials', 'Lifestyle', 'Personal subscriptions', 'Fees & charges', 'Business costs',
            'Other', 'Not labelled yet', 'House construction', 'Lent out', 'Saved / invested'],
   C: { in: '#1e8e3e', living: '#d93025', house: '#f9ab00', net: '#1a73e8', lent: '#9334e6',
        cad: '#d93025', inr: '#ff6d01', ink: '#202124', grey: '#5f6368', tile: '#f8f9fa', band: '#e8f0fe' }

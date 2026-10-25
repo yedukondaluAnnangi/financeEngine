@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-25.5',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-25.6',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -58,19 +58,20 @@ var PLAN = {
     [/^(business income|salary|income|government benefit|tax refund|interest|rewards|transfer in)$/i, 'Income'],
     [/^(rent|loan|utilities|phone|insurance)$/i,                         'Bills & loans'],
     [/^(groceries|fuel|transit|medical|household)$/i,                    'Essentials'],
-    [/^subscription/i,                                                   'Subscriptions'],
+    [/^(personal )?subscription/i,                                       'Personal subscriptions'],
     [/^(bank fees|fees|interest paid)$/i,                                'Fees & charges'],
     [/^(eating out|coffee|alcohol|convenience|shopping|cash|misc|entertainment)$/i, 'Lifestyle'],
-    [/^business$/i,                                                      'Business costs'],
+    // Business, or "Business - <kind>" (software, bank fees, advertising, …): what goes on the tax return.
+    [/^business($|\s*-)/i,                                             'Business costs'],
     [/^(|unknown - check)$/i,                                            'Not labelled yet']
   ],
-  GROUP_ORDER: ['Income', 'Bills & loans', 'Essentials', 'Lifestyle', 'Subscriptions', 'Fees & charges',
+  GROUP_ORDER: ['Income', 'Bills & loans', 'Essentials', 'Lifestyle', 'Personal subscriptions', 'Fees & charges',
                 'Business costs', 'Other', 'Not labelled yet', 'House construction', 'Lent out',
                 'Saved / invested', 'Moved between your accounts'],
   // Not "living costs": big one-off project, money lent, money saved.
   NOT_LIVING : ['Income', 'Moved between your accounts', 'House construction', 'Lent out', 'Saved / invested'],
   // Where the "wasting money" lens looks.
-  WASTE_GROUPS: ['Lifestyle', 'Subscriptions', 'Fees & charges'],
+  WASTE_GROUPS: ['Lifestyle', 'Personal subscriptions', 'Fees & charges'],
 
   MONTHS_SHOWN   : 4,     // columns in "Where your money goes" (current month included)
   STALE_DAYS     : 14,    // an account this many days behind gets the upload banner

@@ -341,6 +341,20 @@ function pgBigTab(ss) {
   sh.getRange(77, 1, 1, 2).setFontColor(TH.GOOD);
   pgNote(sh.getRange(78, 1).setValue('Item by item: Dashboard › 🔥 Where you\'re wasting money. Decide Keep / Cancel on Commitments.'));
 
+  // 8. Business expenses, for the tax return.
+  var y0 = 'DATE(YEAR(TODAY()),1,1)';
+  pgSection(sh, 80, '💼 Business expenses — for your tax return (this year)', W);
+  pgHead(sh, 81, ['Category', 'This year (CAD)', 'Transactions']);
+  sh.getRange(82, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(QUERY(_Calc!A2:M,"select I, sum(L), count(L) where K = \'Business costs\' and A >= date \'"&TEXT(' + y0 + ',"yyyy-mm-dd")&"\' ' +
+    'group by I order by sum(L) desc label sum(L) \'\', count(L) \'\'",0),10,3),"No business expenses yet this year")');
+  sh.getRange(82, 2, 10, 1).setNumberFormat('$#,##0.00');
+  thBand(sh.getRange(82, 1, 10, 3), false);
+  sh.getRange(92, 1).setValue('Total business expenses this year');
+  sh.getRange(92, 2).setFormula('=SUMIFS(_Calc!$L:$L,_Calc!$K:$K,"Business costs",_Calc!$A:$A,">="&' + y0 + ')').setNumberFormat('$#,##0.00');
+  sh.getRange(92, 1, 1, 3).setFontWeight('bold').setBackground(TH.HEAD);
+  pgNote(sh.getRange(93, 1).setValue('Every transaction: Transactions tab › filter Category for "Business". ' +
+    'A category counts here when its Group on the Categories tab is "Business costs" — name new ones "Business - <kind>".'));
+
   sh.setFrozenRows(2);
   return sh;
 }
