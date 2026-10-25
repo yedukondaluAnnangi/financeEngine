@@ -206,7 +206,10 @@ function planRowFormulas(r) {
     'IF(dec="Cancel",IF(AND(lp<>"",$J' + r + '<>"",lp>$J' + r + '+2),"⚠ Charged after cancel ("&TEXT(lp,"mmm d")&")","✂ Cancelled"),' +
     'IF(AND(f="One-off",$F' + r + '=""),IF(lp<>"","✅ Paid "&TEXT(lp,"mmm d"),"📌 Owed — no date set"),' +
     'IF(c="",IF($S' + r + '="","—","⏳ First due "&TEXT($S' + r + ',"mmm d")),' +
-    'IF(AND(lp<>"",lp>=c-wb),IF(inc,"✅ Received ","✅ Paid ")&TEXT(lp,"mmm d"),' +
+    'IF(AND(lp<>"",lp>=c-wb),IF(inc,"✅ Received ","✅ Paid ")&TEXT(lp,"mmm d")&' +
+      // A bill whose last charge moved more than 5% from Amount: the price changed, so say so.
+      'IF(AND(NOT(inc),ISNUMBER($Q' + r + '),ISNUMBER($C' + r + '),ABS($Q' + r + '-$C' + r + ')>MAX(1,$C' + r + '*0.05)),' +
+        '" · ⚠ now "&TEXT($Q' + r + ',"#,##0.00")&", Amount says "&TEXT($C' + r + ',"#,##0.00"),""),' +
     'IF(first>c,"— before first statement",' +
     'IF($G' + r + '="","❔ Not seen — set Account",' +
     'IF(cov>=c+wa,IF(inc,"🔴 Not received ","🔴 Not paid ")&TEXT(c,"mmm d"),' +

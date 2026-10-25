@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-24.2',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-25.1',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -75,7 +75,7 @@ var PLAN = {
   MONTHS_SHOWN   : 4,     // columns in "Where your money goes" (current month included)
   STALE_DAYS     : 14,    // an account this many days behind gets the upload banner
   HABIT_MIN      : 5,    // purchases at one place in 30 days before it counts as a habit
-  PRICE_UP       : 0.05,  // a bill paid 5% above its listed amount is flagged
+  PRICE_UP       : 0.05,  // a bill paid 5% above or below its listed amount is flagged
   REVIEW_BY_DAY  : 7      // monthly review goes out on the first poll of days 1..7
 };
 
@@ -368,6 +368,7 @@ function planAnalyse(txValues, commitValues, opts) {
         var t = tx[best];
         due.state = 'paid'; due.paidOn = t.date; due.paidAmt = Math.abs(t.amt); due.paidCad = Math.abs(t.cad);
         if (c.amount && !c.income && Math.abs(t.amt) > c.amount * (1 + PLAN.PRICE_UP) + 1) due.up = pR(Math.abs(t.amt) - c.amount);
+        if (c.amount && !c.income && Math.abs(t.amt) < c.amount * (1 - PLAN.PRICE_UP) - 1) due.down = pR(c.amount - Math.abs(t.amt));
       } else if (d > today) {
         due.state = 'upcoming'; due.inDays = pDaysBetween(today, d);
       } else if (!coverage(c.acct, true) || coverage(c.acct, true) > d) {
@@ -617,7 +618,7 @@ function planAnalyse(txValues, commitValues, opts) {
 
 function planDueStatus(d) {
   if (d.state === 'nodate')   return '📌 Owed — no date set';
-  if (d.state === 'paid')     return (d.income ? '✅ Received ' : '✅ Paid ') + d.paidOn + (d.up ? '  ⚠ ' + d.up + ' more than listed' : '');
+  if (d.state === 'paid')     return (d.income ? '✅ Received ' : '✅ Paid ') + d.paidOn + (d.up ? '  ⚠ ' + d.up + ' more than listed' : d.down ? '  ⚠ ' + d.down + ' less than listed' : '');
   if (d.state === 'upcoming') return d.inDays === 0 ? '⏳ Due today' : '⏳ Due in ' + d.inDays + ' day' + (d.inDays === 1 ? '' : 's');
   if (d.state === 'due')      return (d.income ? '⏳ Expected — not in yet' : '⏳ Due — not seen yet') +
                                      (d.coverage ? ' (' + (d.acct || 'account') + ' data ends ' + d.coverage + ')' : '');
