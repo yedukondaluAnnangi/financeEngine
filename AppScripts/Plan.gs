@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-25.8',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-25.9',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -962,7 +962,9 @@ function planDaily() {
   // Keyed on the code version too, so a deploy that bumps PLAN.VERSION
   // runs the upkeep on the next poll instead of the next morning.
   var stamp = today + '|' + PLAN.VERSION;
-  if (props.getProperty('plan_day') === stamp) return;
+  // The upkeep and the Now / Big picture / Money map pages each get a run of
+  // their own: together they can pass Apps Script's 6-minute limit.
+  if (props.getProperty('plan_day') === stamp) { planPagesOnce(props, stamp); return; }
   props.setProperty('plan_day', stamp);
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
   refreshDashboard(ss);
@@ -972,6 +974,24 @@ function planDaily() {
     props.setProperty('plan_review', month);
     SpreadsheetApp.flush();
     sendMonthlyReview(ss);
+  }
+}
+
+/** The poll after the upkeep: rebuild the pages on a new version, re-draw the Money map. */
+function planPagesOnce(props, stamp) {
+  if (props.getProperty('pg_day') === stamp) return;
+  props.setProperty('pg_day', stamp);
+  var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
+  try {
+    if (props.getProperty('pg_version') !== PLAN.VERSION || !getTab(ss, PG.TAB_NOW) || !getTab(ss, PG.TAB_MAP) || !getTab(ss, EX.TAB)) {
+      exInstall(ss);
+      pgInstall(ss);
+      vzArrange(ss);
+      props.setProperty('pg_version', PLAN.VERSION);
+    }
+    pgMapChart(ss);
+  } catch (err) {
+    planIssue('Now / Big picture / Money map build failed', err);
   }
 }
 

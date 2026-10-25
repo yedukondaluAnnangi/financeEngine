@@ -516,7 +516,7 @@ function planInstallFormulas(ss, commitSh, cats) {
   var props = PropertiesService.getScriptProperties();
   var dash = getTab(ss, PLAN.TAB_DASH);
   var fresh = props.getProperty('fx_version') !== PLAN.VERSION || !dash || !dash.getRange('A3').getFormula() ||
-              !getTab(ss, FX.CALC) || !getTab(ss, VZ.TAB_OVERVIEW) || !getTab(ss, PG.TAB_NOW) || !getTab(ss, EX.TAB);
+              !getTab(ss, FX.CALC) || !getTab(ss, VZ.TAB_OVERVIEW);
   if (fresh) {
     fxCalcTab(ss);
     fxDashboardTab(ss);
@@ -524,10 +524,9 @@ function planInstallFormulas(ss, commitSh, cats) {
     // The picture tabs are a view: a problem there is logged, never allowed
     // to stop the Dashboard and Commitments upkeep.
     try { vzInstall(ss); } catch (err) { planIssue('Overview / Trends / Accounts build failed', err); }
-    try { exInstall(ss); pgInstall(ss); vzArrange(ss); } catch (err) { planIssue('Now / Big picture build failed', err); }
     props.setProperty('fx_version', PLAN.VERSION);
   }
   fxCommitFormulas(commitSh);
   // Charts are re-drawn every refresh: their range follows the number of months on record.
-  try { SpreadsheetApp.flush(); vzOverviewCharts(ss); bsCharts(ss); pgMapChart(ss); } catch (err) { planIssue('Overview / Balance Sheet charts failed', err); }
+  try { SpreadsheetApp.flush(); vzOverviewCharts(ss); bsCharts(ss); } catch (err) { planIssue('Overview / Balance Sheet charts failed', err); }
 }
