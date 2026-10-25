@@ -45,12 +45,16 @@ var CFG = {
    *   cadence   'any-date' = download any date range (CSV banks)
    *             'statement' = only closed statements exist (PDF cards)
    *   quiet     true = an account with no activity; never asked for
+   *   payFrom   (cards) the account whose money pays this card off — the Now tab
+   *             counts the card's bill against that account
+   *   holdsHst  the account the HST you collect lands in; the Now tab keeps it aside there
    * Login links are the banks' public sign-in pages. Edit freely.
    */
   BANKS : {
     NEO_CARD : { accepts: ['pdf', 'csv'], cadence: 'any-date',
                  login: 'https://member.neofinancial.com/',
-                 howTo: 'Card › Transactions › Download CSV (or the monthly statement PDF). Keep the default file name.' },
+                 howTo: 'Card › Transactions › Download CSV (or the monthly statement PDF). Keep the default file name.',
+                 payFrom: 'RBC_CHQ' },
     RBC_CHQ  : { accepts: ['csv', 'pdf'], cadence: 'any-date',
                  login: 'https://secure.royalbank.com/statics/login-service-ui/index#/full/signin?LANGUAGE=ENGLISH',
                  howTo: 'Chequing ••1324 › Download transactions › CSV. Keep "download-transactions.csv".' },
@@ -64,16 +68,19 @@ var CFG = {
                  quiet: true },
     CIBC_CARD: { accepts: ['csv'], cadence: 'any-date',
                  login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
-                 howTo: 'Credit card ••4181 › Download transactions › CSV. Any file name — the card number inside identifies it.' },
+                 howTo: 'Credit card ••4181 › Download transactions › CSV. Any file name — the card number inside identifies it.',
+                 payFrom: 'CIBC_CHQ' },
     TD_BUS   : { accepts: ['csv'], cadence: 'any-date',
                  login: 'https://easyweb.td.com/',
-                 howTo: 'Business Chequing › Download › CSV. Keep "accountactivity.csv".' },
+                 howTo: 'Business Chequing › Download › CSV. Keep "accountactivity.csv".',
+                 holdsHst: true },
     HDFC_SAV : { accepts: ['xls', 'xlsx', 'csv', 'txt'], cadence: 'any-date',
                  login: 'https://netbanking.hdfcbank.com/netbanking/',
                  howTo: 'Savings ••7203 › Account Statement › choose XLS (not PDF — it is password-protected).' },
     HDFC_CARD: { accepts: ['pdf', 'xls', 'xlsx'], cadence: 'statement',
                  login: 'https://netbanking.hdfcbank.com/netbanking/',
-                 howTo: 'Cards › Regalia ••4351 › Billed statement › XLS (or PDF).' }
+                 howTo: 'Cards › Regalia ••4351 › Billed statement › XLS (or PDF).',
+                 payFrom: 'HDFC_SAV' }
   },
 
   // ---- FX ----------------------------------------------------------------
