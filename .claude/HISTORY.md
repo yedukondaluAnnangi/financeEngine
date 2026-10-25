@@ -30,7 +30,21 @@ Renamed it in Drive before the poll; all 6 loaded. The Neo CSV route (unbilled
 transactions) worked as designed. HDFC Savings XLS dated the 25th still ended
 on the 16th (0 new rows).
 
-**Open:** TD Business and HDFC Savings still end 16 Oct; set Account on the car insurance
+**Quiet accounts (`ae2c1c7`):** `CFG.BANKS[key].quiet` (CIBC ••680, no
+activity). `fxQuietAccounts()` builds a `{"name"}` literal; the Dashboard A3
+banner and the Accounts status leave quiet accounts out, the weekly reminder
+skips them. Accounts red rule now keys on the Status text (`⚠`), not days.
+Verified live: banner "✅ Every account is up to date", ••680 shows 💤.
+
+**Gotchas:**
+- The W1 "Gap: no … data between" warning compares transaction dates, not the
+  statement period, so a week without card use reads as a gap (HDFC Regalia
+  13–19 Sep was one). Harmless; could use the statement period one day.
+- TD exports every account as `accountactivity*.csv`; a second TD account
+  (transfers into chequing) would be read as TD Business and fail C7, holding
+  the batch. Moved that file out of the Inbox to the Bankstatements folder.
+
+**Open:** HDFC Savings still ends 16 Oct; second TD account not tracked; set Account on the car insurance
 row; decide whether to delete Sheet4 / CarInsurance / Summary; Month Ahead's
 recurring list is missing car insurance, India rent and Wealthsimple.
 
