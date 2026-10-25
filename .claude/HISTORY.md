@@ -28,6 +28,10 @@ Dashboard due list, not on the Commitments tab.
 **Expect** the new flag also on: Google Workspace, TD plan fee, Manvi (partial) —
 each needs its Amount confirmed by the user.
 
+Also marked a cancelled subscription on Commitments (Decision = Cancel, Decided on =
+today) — sheet data only, no code. Gotcha: PowerShell 5.1 strips the inner quotes of a
+native argument, so sheets-cli `--values` text needs `\"`: `'[[\"a\",\"b\"]]'`.
+
 ---
 
 ## 2026-10-24 — sheets-cli logged in again; walked through every tab
