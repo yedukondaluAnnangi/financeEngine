@@ -16,6 +16,7 @@
 var PG = {
   TAB_NOW: 'Now',
   TAB_BIG: 'Big picture',
+  TAB_MAP: 'Money map',
   MOVE_DAYS: 14,          // money moves look this far ahead
   LIST_DAYS: 30,          // the payment list looks this far ahead
   LIST_ROWS: 30,
@@ -75,6 +76,15 @@ function pgFresh(ss, name) {
 
 /* ---- Now -------------------------------------------------------------------------- */
 
+/** Row plan of the Now tab for nb bank accounts (the Money map reads the same rows). */
+function pgNowRows(nb) {
+  var m0 = 6, b0 = m0 + 2, bEnd = b0 + nb - 1, bTot = bEnd + 1;
+  var c0 = bTot + 4, cEnd = c0 + 3;                                  // cards: 4 rows
+  var l0 = cEnd + 4, lEnd = l0 + PG.LIST_ROWS - 1;                   // payment list
+  var p0 = lEnd + 4, pEnd = p0 + 14;                                 // paid this month (header in the copy)
+  return { m0: m0, b0: b0, bEnd: bEnd, bTot: bTot, c0: c0, cEnd: cEnd, l0: l0, lEnd: lEnd, p0: p0, pEnd: pEnd, u0: pEnd + 4 };
+}
+
 function pgNowTab(ss) {
   var sh = pgFresh(ss, PG.TAB_NOW);
   var W = 11;
@@ -87,12 +97,8 @@ function pgNowTab(ss) {
   var CD = pgList(cards.length ? cards.map(function (c) { return c.name; }) : ['-']);
   var PY = pgList(cards.length ? cards.map(function (c) { return c.payFrom; }) : ['-']);
 
-  // Row plan.
-  var m0 = 6, b0 = m0 + 2, bEnd = b0 + banks.length - 1, bTot = bEnd + 1;
-  var c0 = bTot + 4, cEnd = c0 + 3;                                  // cards: 4 rows
-  var l0 = cEnd + 4, lEnd = l0 + PG.LIST_ROWS - 1;                   // payment list
-  var p0 = lEnd + 4, pEnd = p0 + 14;                                 // paid this month (header in the copy)
-  var u0 = pEnd + 4;                                                 // statements to upload
+  var R = pgNowRows(banks.length);
+  var m0 = R.m0, b0 = R.b0, bEnd = R.bEnd, bTot = R.bTot, c0 = R.c0, cEnd = R.cEnd, l0 = R.l0, lEnd = R.lEnd, p0 = R.p0, pEnd = R.pEnd, u0 = R.u0;
   var LA = '$A$' + l0 + ':$A$' + lEnd, LB = '$B$' + l0 + ':$B$' + lEnd, LD = '$D$' + l0 + ':$D$' + lEnd, LG = '$G$' + l0 + ':$G$' + lEnd;
   var within = '"<="&(TODAY()+' + PG.MOVE_DAYS + ')';
 
@@ -170,8 +176,8 @@ function pgNowTab(ss) {
 
   // 3. Every payment in the next weeks, grouped by the account it comes out of.
   pgSection(sh, l0 - 2, '🧾 To pay — overdue first, then the next ' + PG.LIST_DAYS + ' days, by the account the money comes out of', W);
-  pgHead(sh, l0 - 1, ['Comes out of', 'Due', 'What', 'Amount (that account\'s money)', 'Currency', 'CAD', 'Status', 'Charged to card']);
-  var blank8 = 'MAKEARRAY(1,8,LAMBDA(i,j,""))';
+  pgHead(sh, l0 - 1, ['Comes out of', 'Due', 'What', 'Amount (that account\'s money)', 'Currency', 'CAD', 'Status', 'Charged to card', 'Kind']);
+  var blank8 = 'MAKEARRAY(1,9,LAMBDA(i,j,""))';
   sh.getRange(l0, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(ARRAYFORMULA(LET(' +
     'n,' + PG_CM + 'A2:A200,g,' + PG_CM + 'G2:G200,st,' + PG_CM + 'T2:T200,z,' + PG_CM + 'Z2:Z200,r,' + PG_CM + 'R2:R200,s,' + PG_CM + 'S2:S200,' +
     'cad,' + PG_CM + 'M2:M200,dec,' + PG_CM + 'I2:I200,io,' + PG_CM + 'W2:W200,' +
@@ -182,24 +188,26 @@ function pgNowTab(ss) {
     'via,MAP(g,LAMBDA(x,IF(x="","",IF(IFERROR(ROWS(FILTER(' + BK + ',ISNUMBER(SEARCH(x,' + BK + ')))),0)>0,"",IFERROR(INDEX(FILTER(' + CD + ',ISNUMBER(SEARCH(x,' + CD + '))),1),""))))),' +
     'cur,MAP(own,curOf),' +
     'amt,MAP(cad,cur,LAMBDA(v,c,IF(ISNUMBER(v),v/IFERROR(VLOOKUP(c,Categories!$E:$F,2,0),1),""))),' +
+    // Kind = the category's group (Bills & loans, House construction, …), for the Money map.
+    'grp,MAP(' + PG_CM + 'H2:H200,LAMBDA(x,IF(x="","Other",IFERROR(VLOOKUP(x,Categories!$A:$B,2,0),"Other")))),' +
     'ok,(n<>"")*(dec<>"Cancel")*(dec<>"Later")*(io="Out"),' +
     'late,ok*REGEXMATCH(st,"^(🔴|⏳ Due|📌)"),' +
     'soon,ok*IFERROR((z<>"")*(z<=' + PG.LIST_DAYS + '),0)*(1-REGEXMATCH(st,"^(Ended|✂)")),' +
     'when,IF(z=0,"🗓 today",IF(z=1,"🗓 tomorrow","🗓 in "&z&" days")),' +
-    'a,IFERROR(FILTER(HSTACK(own,IF(r="",TODAY(),r),n,amt,cur,cad,st,via),late),' + blank8 + '),' +
-    'b,IFERROR(FILTER(HSTACK(own,s,n,amt,cur,cad,when,via),soon),' + blank8 + '),' +
+    'a,IFERROR(FILTER(HSTACK(own,IF(r="",TODAY(),r),n,amt,cur,cad,st,via,grp),late),' + blank8 + '),' +
+    'b,IFERROR(FILTER(HSTACK(own,s,n,amt,cur,cad,when,via,grp),soon),' + blank8 + '),' +
     // Expected payments you approved (Expected tab), until a matching payment shows up.
     'en,' + EX_REF + 'D2:D300,ed,' + EX_REF + 'G2:G300,em,' + EX_REF + 'M2:M300,' +
     'eown,MAP(' + EX_REF + 'H2:H300,ownOf),ecur,MAP(eown,curOf),' +
     'eamt,MAP(em,ecur,LAMBDA(v,c,IF(ISNUMBER(v),v/IFERROR(VLOOKUP(c,Categories!$E:$F,2,0),1),""))),' +
-    'c,IFERROR(FILTER(HSTACK(eown,IF(ed="",TODAY(),ed),en,eamt,ecur,em,IF(ROW(en),"🗒 Expected — you approved"),IF(ROW(en),"")),' +
+    'c,IFERROR(FILTER(HSTACK(eown,IF(ed="",TODAY(),ed),en,eamt,ecur,em,IF(ROW(en),"🗒 Expected — you approved"),IF(ROW(en),""),IF(ROW(en),"Expected payments")),' +
       'en<>"",' + EX_REF + 'K2:K300="Approve",LEFT(' + EX_REF + 'N2:N300,1)<>"💸",IF(ed="",TRUE,ed<=TODAY()+' + PG.LIST_DAYS + ')),' + blank8 + '),' +
     'all,VSTACK(a,b,c),k,FILTER(all,INDEX(all,,3)<>""),' +
-    'SORT(k,1,TRUE,2,TRUE))),' + PG.LIST_ROWS + ',8),"Nothing to pay in the next ' + PG.LIST_DAYS + ' days ✅")');
+    'SORT(k,1,TRUE,2,TRUE))),' + PG.LIST_ROWS + ',9),"Nothing to pay in the next ' + PG.LIST_DAYS + ' days ✅")');
   sh.getRange(l0, 2, PG.LIST_ROWS, 1).setNumberFormat('ddd d mmm');
   sh.getRange(l0, 4, PG.LIST_ROWS, 1).setNumberFormat('#,##0.00');
   sh.getRange(l0, 6, PG.LIST_ROWS, 1).setNumberFormat('$#,##0.00');
-  thBand(sh.getRange(l0, 1, PG.LIST_ROWS, 8), false);
+  thBand(sh.getRange(l0, 1, PG.LIST_ROWS, 9), false);
 
   // 4. Paid this month (the Dashboard's list, header included).
   pgSection(sh, p0 - 2, '✅ Paid / received this month', W);
@@ -360,8 +368,81 @@ function pgBigTab(ss) {
   return sh;
 }
 
-/** Build both pages (on a version change). */
+/* ---- Money map ------------------------------------------------------------------ */
+
+/**
+ * A tree (org chart) of the Now tab: all your money → each account (now → after
+ * the next 14 days) → what goes in and out of it, grouped by kind, and the money
+ * to move in. The node list is formulas in A:B (hidden); the chart is re-drawn
+ * on every refresh by pgMapChart.
+ */
+function pgMapTab(ss) {
+  var sh = pgFresh(ss, PG.TAB_MAP);
+  thPage(sh, 12);
+  var acc = pgAccounts(), banks = acc.banks, R = pgNowRows(banks.length), N = "'" + PG.TAB_NOW + "'!";
+  var rng = function (col, a, b) { return N + '$' + col + '$' + a + ':$' + col + '$' + b; };
+  var BC = pgList(banks.map(function (b) { return b.cur; }));
+  var nm = rng('A', R.b0, R.bEnd), labs = '$A$3:$A$' + (2 + banks.length);
+  var money = function (s, x) { return s + '&TEXT(' + x + ',"#,##0;-#,##0")'; };
+
+  sh.getRange('A1').setValue('Node');
+  sh.getRange('B1').setValue('Parent');
+  sh.getRange('D1').setValue('🌳 Money map — where your money is and where it goes in the next ' + PG.MOVE_DAYS + ' days')
+    .setFontSize(18).setFontWeight('bold').setFontColor(TH.NAVY);
+  pgNote(sh.getRange('D2').setValue('Top: all your accounts. Then each account: balance now → what is left after the next ' + PG.MOVE_DAYS +
+    ' days. Under it: money coming in (+), payments by kind (−), and money to move in (⬅). Numbers come from the Now tab.'));
+
+  sh.getRange('A2').setFormula('="💰 All accounts  now "&TEXT(' + N + 'D' + R.bTot + ',"$#,##0")&"  →  after "&TEXT(' + N + 'J' + R.bTot + ',"$#,##0;-$#,##0")');
+  banks.forEach(function (b, i) {
+    var r = R.b0 + i, s = '"' + pgSym(b.cur) + '"';
+    sh.getRange(3 + i, 1).setFormula('=' + N + 'A' + r + '&"  now "&IF(' + N + 'B' + r + '="","?",' + money(s, N + 'B' + r) + ')' +
+      '&"  →  "&IF(' + N + 'I' + r + '="","?",' + money(s, N + 'I' + r) + ')');
+    sh.getRange(3 + i, 2).setFormula('=$A$2');
+  });
+
+  // Everything under the accounts, in one spill.
+  var t0 = 3 + banks.length, B = '{"",""}';
+  var part = function (label, col) {   // one node per account where that Now column is above 0
+    return 'IFERROR(FILTER(HSTACK(MAP(' + rng(col, R.b0, R.bEnd) + ',sy,LAMBDA(x,s,"' + label + ' "&s&TEXT(x,"#,##0"))),' + labs + '),' +
+           rng(col, R.b0, R.bEnd) + '>0),' + B + ')';
+  };
+  sh.getRange(t0, 1).setFormula('=IFERROR(LET(sy,MAP(' + BC + ',LAMBDA(c,IF(c="INR","₹","$"))),' +
+    'inc,' + part('+ Coming in', 'E') + ',' +
+    'crd,' + part('− Card bills', 'G') + ',' +
+    'hst,' + part('− HST to keep', 'H') + ',' +
+    'q,QUERY({' + rng('A', R.l0, R.lEnd) + ',' + rng('I', R.l0, R.lEnd) + ',' + rng('D', R.l0, R.lEnd) + ',' + rng('B', R.l0, R.lEnd) + '},' +
+      '"select Col1, Col2, sum(Col3) where Col1 is not null and Col4 <= date \'"&TEXT(TODAY()+' + PG.MOVE_DAYS + ',"yyyy-mm-dd")&"\' group by Col1, Col2 label sum(Col3) \'\'",0),' +
+    'pay,IFERROR(HSTACK(MAP(INDEX(q,,1),INDEX(q,,2),INDEX(q,,3),LAMBDA(a,g,v,"− "&g&" "&IFERROR(XLOOKUP(a,' + nm + ',sy),"$")&TEXT(v,"#,##0"))),' +
+      'MAP(INDEX(q,,1),LAMBDA(a,IFERROR(XLOOKUP(a,' + nm + ',' + labs + '),$A$2)))),' + B + '),' +
+    'mv,IFERROR(FILTER(HSTACK(MAP(' + rng('K', R.b0, R.bEnd) + ',LAMBDA(k,"⬅ "&REGEXEXTRACT(k,"→ (.*)"))),' + labs + '),' +
+      'LEFT(' + rng('K', R.b0, R.bEnd) + ',1)="⚠"),' + B + '),' +
+    'all,VSTACK(mv,inc,pay,crd,hst),k,FILTER(all,INDEX(all,,1)<>""),' +
+    // Org charts need unique names: an invisible suffix keeps two equal labels apart.
+    'HSTACK(MAP(INDEX(k,,1),SEQUENCE(ROWS(k)),LAMBDA(x,i,x&REPT(CHAR(8203),i))),INDEX(k,,2))),"")');
+  sh.hideColumns(1, 3);
+  return sh;
+}
+
+/** Re-draw the tree: its range follows how many nodes there are today. */
+function pgMapChart(ss) {
+  var sh = getTab(ss, PG.TAB_MAP);
+  if (!sh) return;
+  sh.getCharts().forEach(function (c) { sh.removeChart(c); });
+  SpreadsheetApp.flush();
+  var n = sh.getRange('A2:A80').getValues().filter(function (r) { return r[0] !== ''; }).length;
+  if (!n) return;
+  sh.insertChart(sh.newChart().setChartType(Charts.ChartType.ORG)
+    .addRange(sh.getRange(2, 1, n, 2))
+    .setPosition(4, 4, 0, 0)
+    .setOption('size', 'large')
+    .setOption('width', 1300).setOption('height', 520)
+    .setOption('color', '#e8f0fe').setOption('selectionColor', '#fff4ce')
+    .build());
+}
+
+/** Build the pages (on a version change). */
 function pgInstall(ss) {
   pgNowTab(ss);
   pgBigTab(ss);
+  pgMapTab(ss);
 }

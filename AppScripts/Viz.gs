@@ -576,7 +576,7 @@ function vzPeekTab(ss) {
 
 /** Tabs in the order you use them; filter row on Transactions. */
 function vzArrange(ss) {
-  [PG.TAB_NOW, PG.TAB_BIG, EX.TAB, VZ.TAB_OVERVIEW, BS.TAB_VIEW, PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, VZ.TAB_TRENDS, VZ.TAB_ACCOUNTS,
+  [PG.TAB_NOW, PG.TAB_MAP, PG.TAB_BIG, EX.TAB, VZ.TAB_OVERVIEW, BS.TAB_VIEW, PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, VZ.TAB_TRENDS, VZ.TAB_ACCOUNTS,
    BS.TAB_INPUT, VZ.TAB_LABEL, CFG.TAB_PAYEES, FX.CATS]
     .forEach(function (name, i) {
       var sh = getTab(ss, name);

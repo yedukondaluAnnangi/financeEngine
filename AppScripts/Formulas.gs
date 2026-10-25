@@ -529,5 +529,5 @@ function planInstallFormulas(ss, commitSh, cats) {
   }
   fxCommitFormulas(commitSh);
   // Charts are re-drawn every refresh: their range follows the number of months on record.
-  try { SpreadsheetApp.flush(); vzOverviewCharts(ss); bsCharts(ss); } catch (err) { planIssue('Overview / Balance Sheet charts failed', err); }
+  try { SpreadsheetApp.flush(); vzOverviewCharts(ss); bsCharts(ss); pgMapChart(ss); } catch (err) { planIssue('Overview / Balance Sheet charts failed', err); }
 }
