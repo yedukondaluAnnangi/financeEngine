@@ -24,7 +24,13 @@ CIBC ••680 9 Sep), so many bills show "Can't tell" rather than paid. `Sheet4
 is empty; `CarInsurance` and `Summary` are old hand-made tabs the engine does
 not build.
 
-**Open:** owner to upload fresh statements; set Account on the car insurance
+**Upload later that day:** 6 files; one CIBC chequing CSV was named `cibc.csv`
+and would have failed the whole batch (chequing needs a name ending `096.csv`).
+Renamed it in Drive before the poll; all 6 loaded. The Neo CSV route (unbilled
+transactions) worked as designed. HDFC Savings XLS dated the 25th still ended
+on the 16th (0 new rows).
+
+**Open:** TD Business and HDFC Savings still end 16 Oct; set Account on the car insurance
 row; decide whether to delete Sheet4 / CarInsurance / Summary; Month Ahead's
 recurring list is missing car insurance, India rent and Wealthsimple.
 
