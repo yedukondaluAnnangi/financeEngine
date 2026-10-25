@@ -9,6 +9,27 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-25 — price changes on a bill were silent
+
+**Asked:** a subscription dropped to a cheaper plan; why did the sheet not notice?
+
+**Why:** Commitments matches a payment by text (Match column), so a cheaper charge
+still counts as ✅ Paid. Amount is never updated from the data, and the only
+amount check (`PLAN.PRICE_UP`) flagged rises, not drops, and only in the
+Dashboard due list, not on the Commitments tab.
+
+**Changed** (`0abc654`, VERSION 2026-10-25.1):
+- Commitments Status (col T, `Formulas.gs`): an outgoing row that is paid but whose
+  Last amount (Q) is more than 5% (min 1) away from Amount (C) now reads
+  `✅ Paid <date> · ⚠ now X, Amount says Y`. Income rows are excluded (pay varies).
+- `planAnalyse` sets `due.down` for drops; `planDueStatus` shows "less than listed".
+- Updated the subscription's Amount on the sheet by hand (sheets-cli).
+
+**Expect** the new flag also on: Google Workspace, TD plan fee, Manvi (partial) —
+each needs its Amount confirmed by the user.
+
+---
+
 ## 2026-10-24 — sheets-cli logged in again; walked through every tab
 
 **Asked:** can Claude reach the sheet; then explain each tab, where to see what
