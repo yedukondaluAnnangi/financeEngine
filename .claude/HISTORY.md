@@ -9,6 +9,27 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-24 — sheets-cli logged in again; walked through every tab
+
+**Asked:** can Claude reach the sheet; then explain each tab, where to see what
+is due now / paid this month / coming later, and the current and future picture.
+
+**Changed:** no code. The sheets-cli token had expired; the owner ran
+`auth login` (the command needs the leading `&` in PowerShell and the
+`--credentials` path). Reads work again. Explained the tabs from live reads:
+Overview / Dashboard / Commitments / Month Ahead / Balance Sheet / Accounts.
+
+**Seen:** most accounts' statements end 16 Oct (Neo 2 Oct, HDFC Regalia 12 Sep,
+CIBC ••680 9 Sep), so many bills show "Can't tell" rather than paid. `Sheet4`
+is empty; `CarInsurance` and `Summary` are old hand-made tabs the engine does
+not build.
+
+**Open:** owner to upload fresh statements; set Account on the car insurance
+row; decide whether to delete Sheet4 / CarInsurance / Summary; Month Ahead's
+recurring list is missing car insurance, India rent and Wealthsimple.
+
+---
+
 ## 2026-10-18 (later) — Labelling clean-up; payments behind each Overview tile
 
 **Asked:** what "Not labelled yet" means; then: show the payments behind each
