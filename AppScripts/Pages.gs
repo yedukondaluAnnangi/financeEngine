@@ -174,10 +174,12 @@ function pgNowTab(ss) {
   sh.getRange(l0, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(ARRAYFORMULA(LET(' +
     'n,' + PG_CM + 'A2:A200,g,' + PG_CM + 'G2:G200,st,' + PG_CM + 'T2:T200,z,' + PG_CM + 'Z2:Z200,r,' + PG_CM + 'R2:R200,s,' + PG_CM + 'S2:S200,' +
     'cad,' + PG_CM + 'M2:M200,dec,' + PG_CM + 'I2:I200,io,' + PG_CM + 'W2:W200,' +
-    'own,MAP(g,LAMBDA(x,IF(x="","(no account set)",IFERROR(INDEX(FILTER(' + BK + ',ISNUMBER(SEARCH(x,' + BK + '))),1),' +
-      'IFERROR(INDEX(FILTER(' + PY + ',ISNUMBER(SEARCH(x,' + CD + '))),1),"(no account set)"))))),' +
+    'ownOf,LAMBDA(x,IF(x="","(no account set)",IFERROR(INDEX(FILTER(' + BK + ',ISNUMBER(SEARCH(x,' + BK + '))),1),' +
+      'IFERROR(INDEX(FILTER(' + PY + ',ISNUMBER(SEARCH(x,' + CD + '))),1),"(no account set)")))),' +
+    'curOf,LAMBDA(o,IFERROR(INDEX(FILTER(' + BC + ',' + BK + '=o),1),"CAD")),' +
+    'own,MAP(g,ownOf),' +
     'via,MAP(g,LAMBDA(x,IF(x="","",IF(IFERROR(ROWS(FILTER(' + BK + ',ISNUMBER(SEARCH(x,' + BK + ')))),0)>0,"",IFERROR(INDEX(FILTER(' + CD + ',ISNUMBER(SEARCH(x,' + CD + '))),1),""))))),' +
-    'cur,MAP(own,LAMBDA(o,IFERROR(INDEX(FILTER(' + BC + ',' + BK + '=o),1),"CAD"))),' +
+    'cur,MAP(own,curOf),' +
     'amt,MAP(cad,cur,LAMBDA(v,c,IF(ISNUMBER(v),v/IFERROR(VLOOKUP(c,Categories!$E:$F,2,0),1),""))),' +
     'ok,(n<>"")*(dec<>"Cancel")*(dec<>"Later")*(io="Out"),' +
     'late,ok*REGEXMATCH(st,"^(🔴|⏳ Due|📌)"),' +
@@ -185,7 +187,13 @@ function pgNowTab(ss) {
     'when,IF(z=0,"🗓 today",IF(z=1,"🗓 tomorrow","🗓 in "&z&" days")),' +
     'a,IFERROR(FILTER(HSTACK(own,IF(r="",TODAY(),r),n,amt,cur,cad,st,via),late),' + blank8 + '),' +
     'b,IFERROR(FILTER(HSTACK(own,s,n,amt,cur,cad,when,via),soon),' + blank8 + '),' +
-    'all,VSTACK(a,b),k,FILTER(all,INDEX(all,,3)<>""),' +
+    // Expected payments you approved (Expected tab), until a matching payment shows up.
+    'en,' + EX_REF + 'D2:D300,ed,' + EX_REF + 'G2:G300,em,' + EX_REF + 'M2:M300,' +
+    'eown,MAP(' + EX_REF + 'H2:H300,ownOf),ecur,MAP(eown,curOf),' +
+    'eamt,MAP(em,ecur,LAMBDA(v,c,IF(ISNUMBER(v),v/IFERROR(VLOOKUP(c,Categories!$E:$F,2,0),1),""))),' +
+    'c,IFERROR(FILTER(HSTACK(eown,IF(ed="",TODAY(),ed),en,eamt,ecur,em,IF(ROW(en),"🗒 Expected — you approved"),IF(ROW(en),"")),' +
+      'en<>"",' + EX_REF + 'K2:K300="Approve",LEFT(' + EX_REF + 'N2:N300,1)<>"💸",IF(ed="",TRUE,ed<=TODAY()+' + PG.LIST_DAYS + ')),' + blank8 + '),' +
+    'all,VSTACK(a,b,c),k,FILTER(all,INDEX(all,,3)<>""),' +
     'SORT(k,1,TRUE,2,TRUE))),' + PG.LIST_ROWS + ',8),"Nothing to pay in the next ' + PG.LIST_DAYS + ' days ✅")');
   sh.getRange(l0, 2, PG.LIST_ROWS, 1).setNumberFormat('ddd d mmm');
   sh.getRange(l0, 4, PG.LIST_ROWS, 1).setNumberFormat('#,##0.00');
