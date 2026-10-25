@@ -34,6 +34,14 @@ var FX = {
   STALE_DAYS: 14
 };
 
+/** Sheet array literal of the accounts marked quiet in CFG.BANKS, e.g. {"CIBC ••680"}. */
+function fxQuietAccounts() {
+  var names = CFG.ACCOUNTS.filter(function (a) { return (CFG.BANKS[a.key] || {}).quiet; })
+    .map(function (a) { return '"' + a.name + '"'; });
+  names = names.filter(function (n, i) { return names.indexOf(n) === i; });
+  return '{' + (names.length ? names.join(',') : '""') + '}';
+}
+
 /** Group → what it counts as on the Dashboard. */
 function fxCountsFor(group) {
   return { 'Income': 'Income', 'House construction': 'House', 'Lent out': 'Lent',
@@ -285,9 +293,10 @@ function fxDashboardCells() {
             // A failed upkeep (formula write, category sync) would otherwise sit unseen in hidden _Issues.
             '&IFERROR("   ⚠ Upkeep problem: "&INDEX(SORT(FILTER({_Issues!A2:A,_Issues!D2:D},_Issues!B2:B="Plan.gs",_Issues!A2:A>NOW()-2),1,FALSE),1,2)&" (see hidden _Issues tab)","")', 'note');
 
-  // Upload banner: accounts whose statements are more than FX.STALE_DAYS behind.
+  // Upload banner: accounts whose statements are more than FX.STALE_DAYS behind, quiet ones left out.
   put(3, 1, '=IFERROR("⚠ Upload statements to see the real picture: "&TEXTJOIN(" · ",TRUE,' +
-            'FILTER(A244:A252&" ("&C244:C252&" days)",ISNUMBER(C244:C252),C244:C252>' + FX.STALE_DAYS + ')),' +
+            'FILTER(A244:A252&" ("&C244:C252&" days)",ISNUMBER(C244:C252),C244:C252>' + FX.STALE_DAYS +
+            ',ISNA(MATCH(A244:A252,' + fxQuietAccounts() + ',0)))),' +
             '"✅ Every account is up to date")', 'bold');
 
   // The whole situation in one line.

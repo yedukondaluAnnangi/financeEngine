@@ -44,6 +44,7 @@ var CFG = {
    *   accepts   file types the checks allow for this account
    *   cadence   'any-date' = download any date range (CSV banks)
    *             'statement' = only closed statements exist (PDF cards)
+   *   quiet     true = an account with no activity; never asked for
    * Login links are the banks' public sign-in pages. Edit freely.
    */
   BANKS : {
@@ -58,7 +59,9 @@ var CFG = {
                  howTo: 'Chequing 73-83096 › Download transactions › CSV. Rename so the name ends in 096.csv.' },
     CIBC_680 : { accepts: ['csv'], cadence: 'any-date',
                  login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
-                 howTo: 'Account ••680 › Download transactions › CSV. Rename so the name ends in 680.csv.' },
+                 howTo: 'Account ••680 › Download transactions › CSV. Rename so the name ends in 680.csv.',
+                 // No activity on this account: left out of the upload banner and the weekly reminder.
+                 quiet: true },
     CIBC_CARD: { accepts: ['csv'], cadence: 'any-date',
                  login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
                  howTo: 'Credit card ••4181 › Download transactions › CSV. Any file name — the card number inside identifies it.' },

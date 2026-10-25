@@ -132,7 +132,7 @@ function sendUploadReminder() {
   Object.keys(CFG.BANKS).forEach(function (key) {
     var bank = CFG.BANKS[key];
     var acct = CFG.ACCOUNTS.filter(function (a) { return a.key === key; })[0];
-    if (!acct) return;
+    if (!acct || bank.quiet) return;
     var lastDate = snap.lastDate[acct.name];
     var need, upToDate = lastDate && lastDate >= yesterday;
     if (upToDate) {

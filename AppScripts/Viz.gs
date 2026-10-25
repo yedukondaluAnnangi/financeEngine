@@ -487,7 +487,8 @@ function vzAccountsTab(ss) {
                 '{"charttype","column";"color","' + VZ.C.living + '"}),""))']);
   }
   sh.getRange(4, 11, n, 1).setFormulas(spark);
-  sh.getRange('L4').setFormula(by('IF(TODAY()-MAXIFS(_Calc!A2:A,_Calc!C2:C,a)>' + FX.STALE_DAYS + ',"⚠ Upload a new statement","✅ Up to date")'));
+  sh.getRange('L4').setFormula(by('IF(ISNUMBER(MATCH(a,' + fxQuietAccounts() + ',0)),"💤 No activity — not asked for",' +
+    'IF(TODAY()-MAXIFS(_Calc!A2:A,_Calc!C2:C,a)>' + FX.STALE_DAYS + ',"⚠ Upload a new statement","✅ Up to date"))'));
 
   sh.getRange(4, 3, n, 2).setNumberFormat('yyyy-mm-dd');
   sh.getRange(4, 5, n, 2).setNumberFormat('0');
@@ -496,7 +497,7 @@ function vzAccountsTab(ss) {
   [210, 75, 100, 115, 90, 95, 130, 130, 130, 105, 170, 190].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
   var stale = sh.getRange(4, 1, n, 12);
   sh.setConditionalFormatRules([
-    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER($E4),$E4>' + FX.STALE_DAYS + ')')
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=LEFT($L4,1)="⚠"')
       .setRanges([stale]).setBackground('#fce8e6').build(),
     SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER($E4),$E4<=' + FX.STALE_DAYS + ')')
       .setRanges([sh.getRange(4, 12, n, 1)]).setBackground('#e6f4ea').build()
