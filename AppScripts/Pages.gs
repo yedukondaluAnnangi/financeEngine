@@ -111,7 +111,7 @@ function pgNowTab(ss) {
   // 1. Money in each account and what to move.
   pgSection(sh, m0, '💵 Your money now — and what to move before the next ' + PG.MOVE_DAYS + ' days of payments', W);
   pgHead(sh, m0 + 1, ['Account', 'Balance', 'As of', 'Balance (CAD)', '+ Coming in', '− To pay', '− Card bills', '− HST to keep',
-                      '= Spare', 'Spare (CAD)', 'What to do']);
+                      'Spare', 'Spare (CAD)', 'What to do']);
   banks.forEach(function (b, i) {
     var r = b0 + i, nm = '"' + b.name + '"', rate = pgRate(b.cur), sym = pgSym(b.cur);
     sh.getRange(r, 1).setValue(b.name);
@@ -269,16 +269,18 @@ function pgBigTab(ss) {
   for (var k = 5; k >= 0; k--) {
     var r = 21 + (5 - k), m = 'TEXT(EDATE(TODAY(),-' + k + '),"yyyy-mm")';
     var sum = function (what) { return 'SUMIFS(_Calc!$L:$L,_Calc!$B:$B,' + m + ',_Calc!$J:$J,"' + what + '")'; };
+    // Months before the first statement stay blank instead of showing $0.
+    var had = 'IF(' + m + '<TEXT(MIN(_Calc!$A$2:$A),"yyyy-mm"),"",';
     sh.getRange(r, 1).setFormula('=TEXT(EDATE(TODAY(),-' + k + '),"mmm yyyy")' + (k === 0 ? '&" (so far)"' : ''));
-    sh.getRange(r, 2).setFormula('=' + sum('Income') + '-' + fxHst(',_Calc!$B:$B,' + m));
-    sh.getRange(r, 3).setFormula('=' + sum('Living'));
-    sh.getRange(r, 4).setFormula('=' + sum('House'));
-    sh.getRange(r, 5).setFormula('=' + sum('Lent') + '+' + sum('Saved'));
-    sh.getRange(r, 6).setFormula('=B' + r + '-C' + r + '-D' + r + '-E' + r).setFontWeight('bold');
+    sh.getRange(r, 2).setFormula('=' + had + sum('Income') + '-' + fxHst(',_Calc!$B:$B,' + m) + ')');
+    sh.getRange(r, 3).setFormula('=' + had + sum('Living') + ')');
+    sh.getRange(r, 4).setFormula('=' + had + sum('House') + ')');
+    sh.getRange(r, 5).setFormula('=' + had + sum('Lent') + '+' + sum('Saved') + ')');
+    sh.getRange(r, 6).setFormula('=IF(B' + r + '="","",B' + r + '-C' + r + '-D' + r + '-E' + r + ')').setFontWeight('bold');
   }
-  sh.getRange(27, 1).setValue('Average of the full months with data');
+  sh.getRange(27, 1).setValue('Average of the full months with income');
   ['B', 'C', 'D', 'E', 'F'].forEach(function (c) {
-    sh.getRange(27, c.charCodeAt(0) - 64).setFormula('=IFERROR(AVERAGEIF(' + c + '21:' + c + '25,"<>0"),0)');
+    sh.getRange(27, c.charCodeAt(0) - 64).setFormula('=IFERROR(AVERAGEIFS(' + c + '21:' + c + '25,$B21:$B25,">0"),0)');
   });
   sh.getRange(27, 1, 1, 6).setFontWeight('bold').setBackground(TH.HEAD);
   sh.getRange(21, 2, 7, 5).setNumberFormat('$#,##0;[Red]-$#,##0');

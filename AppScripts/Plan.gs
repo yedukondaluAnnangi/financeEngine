@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-25.2',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-25.3',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
