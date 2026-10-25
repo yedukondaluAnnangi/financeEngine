@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-24.1',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-24.2',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -561,11 +561,13 @@ function planAnalyse(txValues, commitValues, opts) {
 
   // ---- recurring charges not on the list yet ----------------------------
   // A payee charged in 2+ different months, at most twice a month, at a
-  // steady amount (within 25% of the median), in a spending group.
+  // steady amount (within 25% of the median), in a spending group. Lifestyle
+  // (eating out, convenience, shopping) is left out: a café visited twice is a
+  // habit, not a bill. Those show under habits above.
   var byPayee = {};
   tx.forEach(function (t, i) {
     if (used[i] || t.cad >= 0) return;
-    if (['Moved between your accounts', 'House construction', 'Lent out', 'Essentials', 'Income', 'Not labelled yet'].indexOf(t.group) !== -1) return;
+    if (PLAN_NOT_BILLS.indexOf(t.group) !== -1) return;
     if (!t.payee || t.payee === 'Needs labelling') return;
     if (commits.some(function (c) { return !c.anyDesc && c.re.test(t.desc + ' | ' + t.payee); })) return;
     (byPayee[t.payee] = byPayee[t.payee] || []).push(t);
@@ -659,6 +661,7 @@ function refreshDashboard(ss, quick) {
     planPayeesV3Once(ss);
     planFillCategoriesOnce(ss, 'plan_fill_cats_v1', PLAN_PAYEES_V2.concat(PLAN_PAYEES_V3));
     planPayWeeklyOnce(commitSh);
+    planDropHabitRowsOnce(ss, commitSh);
   }
   // The script still reads the data for two jobs a formula cannot do:
   // dating a new decision, and spotting a new recurring charge.
@@ -672,6 +675,34 @@ function refreshDashboard(ss, quick) {
     .concat(planCommitValues(commitSh).map(function (r) { return r[7]; }));
   planInstallFormulas(ss, commitSh, cats);
   SpreadsheetApp.flush();
+}
+
+/** Groups the recurring-charge detector never turns into a Commitments row. */
+var PLAN_NOT_BILLS = ['Moved between your accounts', 'House construction', 'Lent out', 'Essentials', 'Income',
+                      'Not labelled yet', 'Lifestyle'];
+
+/**
+ * Once (24 Oct): remove the rows the detector added for everyday spending
+ * (Jimmy the Greek, Chatime, convenience stores) before Lifestyle was left
+ * out of it. Only rows it added and nobody decided on are removed: Notes
+ * still "Found automatically", Decision still Review.
+ */
+function planDropHabitRowsOnce(ss, sh) {
+  var props = PropertiesService.getScriptProperties();
+  if (props.getProperty('plan_drop_habits_v1')) return;
+  var cats = getTab(ss, 'Categories');
+  var group = {};
+  if (cats && cats.getLastRow() > 1) {
+    cats.getRange(2, 1, cats.getLastRow() - 1, 2).getValues().forEach(function (r) { group[String(r[0]).trim()] = String(r[1]).trim(); });
+  }
+  var rows = [];
+  planCommitValues(sh).forEach(function (r, i) {
+    if (!/^Found automatically/.test(String(r[11])) || !/^review$/i.test(String(r[8]).trim())) return;
+    if (PLAN_NOT_BILLS.indexOf(group[String(r[7]).trim()]) === -1) return;
+    rows.push(i + 2);
+  });
+  rows.reverse().forEach(function (row) { sh.deleteRow(row); });   // bottom up, so row numbers hold
+  props.setProperty('plan_drop_habits_v1', new Date().toISOString());
 }
 
 /**
