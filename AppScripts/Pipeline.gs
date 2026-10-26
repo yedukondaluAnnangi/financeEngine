@@ -31,6 +31,24 @@ function pollInbox() {
       sendUploadReminder();
     }
 
+    var staging = subfolder(DriveApp.getFolderById(CFG.OUTBOX_ID), CFG.STAGING_NAME);
+
+    // A batch left in Staging by a transient error goes first.
+    var waiting = staging.getFolders();
+    if (waiting.hasNext()) { runBatch(waiting.next()); return; }
+
+    // Uploads come first; the upkeep waits for a poll with nothing to ingest,
+    // because a rebuild can take most of a run's six minutes.
+    var inbox = DriveApp.getFolderById(CFG.INBOX_ID);
+    var files = listFiles(inbox);
+    var newest = files.length ? Math.max.apply(null, files.map(function (f) {
+      return Math.max(f.getDateCreated().getTime(), f.getLastUpdated().getTime());
+    })) : 0;
+    if (files.length && Date.now() - newest >= CFG.SETTLE_MINUTES * 60000) {
+      runBatch(claimBatch(inbox, staging, files));
+      return;
+    }
+
     // Once a day: rebuild the dashboard (due dates move with the calendar),
     // and early in the month send last month's review. See Plan.gs.
     try {
@@ -38,23 +56,6 @@ function pollInbox() {
     } catch (err) {
       planIssue('Daily dashboard refresh failed', err);
     }
-
-    var staging = subfolder(DriveApp.getFolderById(CFG.OUTBOX_ID), CFG.STAGING_NAME);
-
-    // A batch left in Staging by a transient error goes first.
-    var waiting = staging.getFolders();
-    if (waiting.hasNext()) { runBatch(waiting.next()); return; }
-
-    var inbox = DriveApp.getFolderById(CFG.INBOX_ID);
-    var files = listFiles(inbox);
-    if (!files.length) return;
-
-    var newest = Math.max.apply(null, files.map(function (f) {
-      return Math.max(f.getDateCreated().getTime(), f.getLastUpdated().getTime());
-    }));
-    if (Date.now() - newest < CFG.SETTLE_MINUTES * 60000) return;   // still uploading
-
-    runBatch(claimBatch(inbox, staging, files));
   } finally {
     lock.releaseLock();
   }
