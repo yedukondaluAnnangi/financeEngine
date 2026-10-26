@@ -245,6 +245,7 @@ function onOpen() {
     .addItem('Re-label everything from Payees tab', 'relabelEverything')
     .addSeparator()
     .addItem('Refresh dashboard', 'refreshDashboard')
+    .addItem('Refresh Home, Ledger, Summary, Habits, Forecast, Health', 'vwRefresh')
     .addItem('Send the upload reminder now', 'sendUploadReminder')
     .addItem('Test parse one file (no writing)', 'testOneFile')
     .addItem('List tab names', 'listTabs')

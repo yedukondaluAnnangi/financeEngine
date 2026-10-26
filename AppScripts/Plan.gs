@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-25.14',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-26.1',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -964,7 +964,7 @@ function planDaily() {
   var stamp = today + '|' + PLAN.VERSION;
   // The upkeep and the Now / Big picture / Money map pages each get a run of
   // their own: together they can pass Apps Script's 6-minute limit.
-  if (props.getProperty('plan_day') === stamp) { planPagesOnce(props, stamp); return; }
+  if (props.getProperty('plan_day') === stamp) return planPagesOnce(props, stamp);
   props.setProperty('plan_day', stamp);
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
   refreshDashboard(ss);
@@ -975,11 +975,12 @@ function planDaily() {
     SpreadsheetApp.flush();
     sendMonthlyReview(ss);
   }
+  return true;   // did work: the poll leaves the rest for the next one
 }
 
 /** The poll after the upkeep: rebuild the pages on a new version, re-draw the Money map. */
 function planPagesOnce(props, stamp) {
-  if (props.getProperty('pg_day') === stamp) return;
+  if (props.getProperty('pg_day') === stamp) return false;
   props.setProperty('pg_day', stamp);
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
   try {
@@ -993,6 +994,7 @@ function planPagesOnce(props, stamp) {
   } catch (err) {
     planIssue('Now / Big picture / Money map build failed', err);
   }
+  return true;
 }
 
 /**

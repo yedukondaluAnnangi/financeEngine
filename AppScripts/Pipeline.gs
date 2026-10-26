@@ -51,11 +51,15 @@ function pollInbox() {
 
     // Once a day: rebuild the dashboard (due dates move with the calendar),
     // and early in the month send last month's review. See Plan.gs.
+    // A poll with no upkeep to do rebuilds Home / Ledger / … if the sheet
+    // changed since their last build (Views.gs).
+    var busy = true;
     try {
-      planDaily();
+      busy = planDaily();
     } catch (err) {
       planIssue('Daily dashboard refresh failed', err);
     }
+    if (!busy) vwMaybeRefresh();
   } finally {
     lock.releaseLock();
   }
