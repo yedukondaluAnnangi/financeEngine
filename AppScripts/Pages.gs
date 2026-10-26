@@ -371,73 +371,113 @@ function pgBigTab(ss) {
 /* ---- Money map ------------------------------------------------------------------ */
 
 /**
- * A tree (org chart) of the Now tab: all your money → each account (now → after
- * the next 14 days) → what goes in and out of it, grouped by kind, and the money
- * to move in. The node list is formulas in A:B (hidden); the chart is re-drawn
- * on every refresh by pgMapChart.
+ * One card per bank account, side by side, read from the Now tab:
+ *   balance now → money coming in (+), payments by kind (−), card bills, HST
+ *   to keep, transfers in (⬅) and out (➡) → what is left after 14 days.
+ * Plain cells, so the colours say it: green in, red out, blue between your
+ * accounts. Payments with no account set are listed underneath.
  */
+var PG_MAP_ITEMS = 10;   // rows per card for the in / out lines
+
 function pgMapTab(ss) {
   var sh = pgFresh(ss, PG.TAB_MAP);
-  thPage(sh, 12);
+  sh.getRange('A1:Z80').breakApart();
   var acc = pgAccounts(), banks = acc.banks, R = pgNowRows(banks.length), N = "'" + PG.TAB_NOW + "'!";
+  var W = 1 + banks.length * 3;
+  thPage(sh, W + 1);
   var rng = function (col, a, b) { return N + '$' + col + '$' + a + ':$' + col + '$' + b; };
-  var BC = pgList(banks.map(function (b) { return b.cur; }));
-  var nm = rng('A', R.b0, R.bEnd), labs = '$A$3:$A$' + (2 + banks.length);
-  var money = function (s, x) { return s + '&TEXT(' + x + ',"#,##0;-#,##0")'; };
+  var r0 = 5, rNow = 6, i0 = 7, iEnd = i0 + PG_MAP_ITEMS - 1, rAfter = iEnd + 1, rDo = rAfter + 1;
+  var fmtOf = function (cur) { return cur === 'INR' ? '+"₹"#,##0;-"₹"#,##0;"₹"0' : '+$#,##0;-$#,##0;$0'; };
+  var balFmt = function (cur) { return cur === 'INR' ? '"₹"#,##0;-"₹"#,##0' : '$#,##0;-$#,##0'; };
 
-  sh.getRange('A1').setValue('Node');
-  sh.getRange('B1').setValue('Parent');
-  sh.getRange('D1').setValue('🌳 Money map — where your money is and where it goes in the next ' + PG.MOVE_DAYS + ' days')
+  sh.getRange('B1').setValue('🌳 Money map — your accounts now, and after the next ' + PG.MOVE_DAYS + ' days')
     .setFontSize(18).setFontWeight('bold').setFontColor(TH.NAVY);
-  pgNote(sh.getRange('D2').setValue('Top: all your accounts. Then each account: balance now → what is left after the next ' + PG.MOVE_DAYS +
-    ' days. Under it: money coming in (+), payments by kind (−), and money to move in (⬅). Numbers come from the Now tab.'));
+  pgNote(sh.getRange('B2').setValue('Green = money coming in · red = payments, grouped by kind · blue = money to move between your accounts. ' +
+    'Numbers come from the Now tab; a "?" means type today\'s balance on Assets & Debts.'));
+  sh.setRowHeight(1, 36);
 
-  sh.getRange('A2').setFormula('="💰 All accounts  now "&TEXT(' + N + 'D' + R.bTot + ',"$#,##0")&"  →  after "&TEXT(' + N + 'J' + R.bTot + ',"$#,##0;-$#,##0")');
+  // The whole picture in one line.
+  sh.getRange(3, 2, 1, W - 1).merge().setFormula('="💰 All your accounts:  now "&TEXT(' + N + 'D' + R.bTot + ',"$#,##0")&' +
+    '"     →     after the next ' + PG.MOVE_DAYS + ' days "&TEXT(' + N + 'J' + R.bTot + ',"$#,##0;-$#,##0")')
+    .setFontSize(15).setFontWeight('bold').setFontColor('#ffffff').setBackground(TH.NAVY)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sh.setRowHeight(3, 40);
+
+  var rules = [];
   banks.forEach(function (b, i) {
-    var r = R.b0 + i, s = '"' + pgSym(b.cur) + '"';
-    sh.getRange(3 + i, 1).setFormula('=' + N + 'A' + r + '&"  now "&IF(' + N + 'B' + r + '="","?",' + money(s, N + 'B' + r) + ')' +
-      '&"  →  "&IF(' + N + 'I' + r + '="","?",' + money(s, N + 'I' + r) + ')');
-    sh.getRange(3 + i, 2).setFormula('=$A$2');
-  });
+    var c = 2 + i * 3, r = R.b0 + i, nm = b.name, rate = pgRate(b.cur);
+    var L = sh.getRange(i0, c, PG_MAP_ITEMS, 1), A = sh.getRange(i0, c + 1, PG_MAP_ITEMS, 1);
+    var labA1 = L.getA1Notation(), amtA1 = A.getA1Notation();
 
-  // Everything under the accounts, in one spill.
-  var t0 = 3 + banks.length, B = '{"",""}';
-  var part = function (label, col) {   // one node per account where that Now column is above 0
-    return 'IFERROR(FILTER(HSTACK(MAP(' + rng(col, R.b0, R.bEnd) + ',sy,LAMBDA(x,s,"' + label + ' "&s&TEXT(x,"#,##0"))),' + labs + '),' +
-           rng(col, R.b0, R.bEnd) + '>0),' + B + ')';
+    sh.getRange(r0, c, 1, 2).merge().setValue(nm).setBackground(TH.NAVY).setFontColor('#ffffff').setFontWeight('bold')
+      .setFontSize(12).setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sh.getRange(rNow, c).setValue('Now');
+    sh.getRange(rNow, c + 1).setFormula('=IF(' + N + 'B' + r + '="","?",' + N + 'B' + r + ')').setNumberFormat(balFmt(b.cur));
+    sh.getRange(rNow, c, 1, 2).setBackground('#e8f0fe').setFontWeight('bold').setFontSize(13).setFontColor(TH.NAVY);
+
+    // In / out lines, biggest first within each kind.
+    var nowK = N + 'K' + r, blank = '{"",""}';
+    sh.getRange(i0, c).setFormula('=IFERROR(ARRAY_CONSTRAIN(LET(' +
+      'inc,IF(' + N + 'E' + r + '>0,HSTACK("+ Coming in",' + N + 'E' + r + '),' + blank + '),' +
+      'mvin,IF(LEFT(' + nowK + ',1)="⚠",HSTACK("⬅ Move in "&REGEXEXTRACT(' + nowK + ',"(from .*)"),-' + N + 'I' + r + '),' + blank + '),' +
+      'q,QUERY({' + rng('A', R.l0, R.lEnd) + ',' + rng('I', R.l0, R.lEnd) + ',' + rng('D', R.l0, R.lEnd) + ',' + rng('B', R.l0, R.lEnd) + '},' +
+        '"select Col2, sum(Col3) where Col1 = \'' + nm + '\' and Col4 <= date \'"&TEXT(TODAY()+' + PG.MOVE_DAYS + ',"yyyy-mm-dd")&"\' ' +
+        'group by Col2 order by sum(Col3) desc label sum(Col3) \'\'",0),' +
+      'pay,IFERROR(HSTACK("− "&INDEX(q,,1),-INDEX(q,,2)),' + blank + '),' +
+      'crd,IF(' + N + 'G' + r + '>0,HSTACK("− Card bills",-' + N + 'G' + r + '),' + blank + '),' +
+      'hst,IF(' + N + 'H' + r + '>0,HSTACK("− HST to keep for CRA",-' + N + 'H' + r + '),' + blank + '),' +
+      'k,IFERROR(FILTER({' + rng('A', R.b0, R.bEnd) + ',' + rng('J', R.b0, R.bEnd) + '},LEFT(' + rng('K', R.b0, R.bEnd) + ',1)="⚠",' +
+        'ISNUMBER(SEARCH("from ' + nm + '",' + rng('K', R.b0, R.bEnd) + '))),""),' +
+      'mvout,IFERROR(HSTACK("➡ Send to "&INDEX(k,,1),INDEX(k,,2)/' + rate + '),' + blank + '),' +
+      'all,VSTACK(inc,mvin,pay,crd,hst,mvout),FILTER(all,INDEX(all,,1)<>"")),' + PG_MAP_ITEMS + ',2),"")');
+    A.setNumberFormat(fmtOf(b.cur)).setHorizontalAlignment('right');
+    L.setWrap(true);
+
+    // After the payments and the transfers.
+    sh.getRange(rAfter, c).setValue('After ' + PG.MOVE_DAYS + ' days');
+    sh.getRange(rAfter, c + 1).setFormula('=IF(' + N + 'B' + r + '="","?",' + N + 'I' + r + '+SUMIF(' + labA1 + ',"⬅*",' + amtA1 + ')+SUMIF(' + labA1 + ',"➡*",' + amtA1 + '))')
+      .setNumberFormat(balFmt(b.cur));
+    sh.getRange(rAfter, c, 1, 2).setFontWeight('bold').setFontSize(13);
+    sh.getRange(rDo, c, 1, 2).merge().setFormula('=' + nowK).setWrap(true).setFontSize(9).setFontColor(TH.GREY).setVerticalAlignment('top');
+    sh.setRowHeight(rDo, 48);
+    sh.getRange(r0, c, rDo - r0 + 1, 2).setBorder(true, true, true, true, false, false, '#c5cbd6', SpreadsheetApp.BorderStyle.SOLID);
+    sh.setColumnWidth(c, 200);
+    sh.setColumnWidth(c + 1, 105);
+    sh.setColumnWidth(c + 2, 18);
+
+    var after = sh.getRange(rAfter, c, 1, 2), afterA1 = sh.getRange(rAfter, c + 1).getA1Notation();
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER(' + afterA1 + '),' + afterA1 + '>=0)')
+      .setBackground(TH.GOOD_BG).setFontColor(TH.GOOD).setRanges([after]).build());
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER(' + afterA1 + '),' + afterA1 + '<0)')
+      .setBackground(TH.BAD_BG).setFontColor(TH.BAD).setRanges([after]).build());
+  });
+  sh.setColumnWidth(1, 18);
+
+  // Line colours across all cards: by the first character of the label.
+  var items = sh.getRange(i0, 2, PG_MAP_ITEMS, W - 1);
+  var line = function (ch, bg, fg) {
+    // The label cell of this card's line; spacer columns stay white.
+    return SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(MOD(COLUMN()-2,3)<2,LEFT(INDEX($A' + i0 + ':$Z' + iEnd + ',ROW()-' + (i0 - 1) +
+      ',COLUMN()-MOD(COLUMN()-2,3)),1)="' + ch + '")').setBackground(bg).setFontColor(fg).setRanges([items]).build();
   };
-  sh.getRange(t0, 1).setFormula('=IFERROR(LET(sy,MAP(' + BC + ',LAMBDA(c,IF(c="INR","₹","$"))),' +
-    'inc,' + part('+ Coming in', 'E') + ',' +
-    'crd,' + part('− Card bills', 'G') + ',' +
-    'hst,' + part('− HST to keep', 'H') + ',' +
-    'q,QUERY({' + rng('A', R.l0, R.lEnd) + ',' + rng('I', R.l0, R.lEnd) + ',' + rng('D', R.l0, R.lEnd) + ',' + rng('B', R.l0, R.lEnd) + '},' +
-      '"select Col1, Col2, sum(Col3) where Col1 is not null and Col4 <= date \'"&TEXT(TODAY()+' + PG.MOVE_DAYS + ',"yyyy-mm-dd")&"\' group by Col1, Col2 label sum(Col3) \'\'",0),' +
-    'pay,IFERROR(HSTACK(MAP(INDEX(q,,1),INDEX(q,,2),INDEX(q,,3),LAMBDA(a,g,v,"− "&g&" "&IFERROR(XLOOKUP(a,' + nm + ',sy),"$")&TEXT(v,"#,##0"))),' +
-      'MAP(INDEX(q,,1),LAMBDA(a,IFERROR(XLOOKUP(a,' + nm + ',' + labs + '),$A$2)))),' + B + '),' +
-    'mv,IFERROR(FILTER(HSTACK(MAP(' + rng('K', R.b0, R.bEnd) + ',LAMBDA(k,"⬅ "&REGEXEXTRACT(k,"→ (.*)"))),' + labs + '),' +
-      'LEFT(' + rng('K', R.b0, R.bEnd) + ',1)="⚠"),' + B + '),' +
-    'all,VSTACK(mv,inc,pay,crd,hst),k,FILTER(all,INDEX(all,,1)<>""),' +
-    // Org charts need unique names: an invisible suffix keeps two equal labels apart.
-    'HSTACK(MAP(INDEX(k,,1),SEQUENCE(ROWS(k)),LAMBDA(x,i,x&REPT(CHAR(8203),i))),INDEX(k,,2))),"")');
-  sh.hideColumns(1, 3);
+  rules.push(line('+', '#e6f4ea', '#137333'), line('−', '#fdecea', '#b3261e'), line('⬅', '#e3f2fd', '#0b57d0'), line('➡', '#e3f2fd', '#0b57d0'));
+  sh.setConditionalFormatRules(rules);
+
+  // Payments with no account set.
+  var n0 = rDo + 3;
+  pgSection(sh, n0, '❔ Payments with no account set — say which account pays them (Commitments › Account)', W);
+  sh.getRange(n0 + 1, 2).setFormula('=IFERROR(ARRAY_CONSTRAIN(FILTER({' + rng('C', R.l0, R.lEnd) + ',' + rng('B', R.l0, R.lEnd) + ',' + rng('F', R.l0, R.lEnd) + '},' +
+    rng('A', R.l0, R.lEnd) + '="(no account set)"),6,3),"None ✅")');
+  sh.getRange(n0 + 1, 3, 6, 1).setNumberFormat('ddd d mmm');
+  sh.getRange(n0 + 1, 4, 6, 1).setNumberFormat('$#,##0.00');
+  sh.setFrozenRows(3);
   return sh;
 }
 
-/** Re-draw the tree: its range follows how many nodes there are today. */
+/** The old org chart is gone; remove it if a sheet still has one. */
 function pgMapChart(ss) {
   var sh = getTab(ss, PG.TAB_MAP);
-  if (!sh) return;
-  sh.getCharts().forEach(function (c) { sh.removeChart(c); });
-  SpreadsheetApp.flush();
-  var n = sh.getRange('A2:A80').getValues().filter(function (r) { return r[0] !== ''; }).length;
-  if (!n) return;
-  sh.insertChart(sh.newChart().setChartType(Charts.ChartType.ORG)
-    .addRange(sh.getRange(2, 1, n, 2))
-    .setPosition(4, 4, 0, 0)
-    .setOption('size', 'large')
-    .setOption('width', 1300).setOption('height', 520)
-    .setOption('color', '#e8f0fe').setOption('selectionColor', '#fff4ce')
-    .build());
+  if (sh) sh.getCharts().forEach(function (c) { sh.removeChart(c); });
 }
 
 /** Build the pages (on a version change). */
