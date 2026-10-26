@@ -179,7 +179,7 @@ function pgNowTab(ss) {
   thBand(sh.getRange(c0, 1, 4, 5), false);
 
   // 3. Every payment in the next weeks, grouped by the account it comes out of.
-  pgSection(sh, l0 - 2, '🧾 To pay — overdue first, then the next ' + PG.LIST_DAYS + ' days, by the account the money comes out of', W);
+  pgSection(sh, l0 - 2, '🧾 To pay — by date: overdue first, then the next ' + PG.LIST_DAYS + ' days (column A = the account the money comes out of)', W);
   pgHead(sh, l0 - 1, ['Comes out of', 'Due', 'What', 'Amount (that account\'s money)', 'Currency', 'CAD', 'Status', 'Charged to card', 'Kind']);
   var blank8 = 'MAKEARRAY(1,9,LAMBDA(i,j,""))';
   sh.getRange(l0, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(ARRAYFORMULA(LET(' +
@@ -207,7 +207,8 @@ function pgNowTab(ss) {
     'c,IFERROR(FILTER(HSTACK(eown,IF(ed="",TODAY(),ed),en,eamt,ecur,em,IF(ROW(en),"🗒 Expected — you approved"),IF(ROW(en),""),IF(ROW(en),"Expected payments")),' +
       'en<>"",' + EX_REF + 'K2:K300="Approve",LEFT(' + EX_REF + 'N2:N300,1)<>"💸",IF(ed="",TRUE,ed<=TODAY()+' + PG.LIST_DAYS + ')),' + blank8 + '),' +
     'all,VSTACK(a,b,c),k,FILTER(all,INDEX(all,,3)<>""),' +
-    'SORT(k,1,TRUE,2,TRUE))),' + PG.LIST_ROWS + ',9),"Nothing to pay in the next ' + PG.LIST_DAYS + ' days ✅")');
+    // By date: the most urgent first.
+    'SORT(k,2,TRUE,1,TRUE))),' + PG.LIST_ROWS + ',9),"Nothing to pay in the next ' + PG.LIST_DAYS + ' days ✅")');
   sh.getRange(l0, 2, PG.LIST_ROWS, 1).setNumberFormat('ddd d mmm');
   sh.getRange(l0, 4, PG.LIST_ROWS, 1).setNumberFormat('#,##0.00');
   sh.getRange(l0, 6, PG.LIST_ROWS, 1).setNumberFormat('$#,##0.00');
@@ -368,6 +369,21 @@ function pgBigTab(ss) {
   pgNote(sh.getRange(93, 1).setValue('Every transaction: Transactions tab › filter Category for "Business". ' +
     'A category counts here when its Group on the Categories tab is "Business costs" — name new ones "Business - <kind>".'));
 
+  // 9. Every recurring payment, grouped by kind.
+  pgSection(sh, 96, '🔁 Every recurring payment — grouped by kind (decide Keep / Cancel / Later on Commitments)', W);
+  pgHead(sh, 97, ['Kind', 'Payment', 'Amount', 'Currency', 'How often', 'Account', 'Per month (CAD)', 'Status']);
+  sh.getRange(98, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(ARRAYFORMULA(LET(' +
+    'grp,MAP(' + PG_CM + 'H2:H200,LAMBDA(x,IF(x="","Other",IFERROR(VLOOKUP(x,Categories!$A:$B,2,0),"Other")))),' +
+    'k,FILTER({grp,' + PG_CM + 'A2:A200,' + PG_CM + 'C2:C200,' + PG_CM + 'D2:D200,' + PG_CM + 'E2:E200,' + PG_CM + 'G2:G200,' + PG_CM + 'N2:N200,' + PG_CM + 'T2:T200},' +
+      PG_CM + 'A2:A200<>"",' + PG_CM + 'W2:W200="Out",' + PG_CM + 'E2:E200<>"One-off",' + PG_CM + 'I2:I200<>"Cancel"),' +
+    'SORT(k,1,TRUE,7,FALSE))),40,8),"No recurring payments on Commitments")');
+  sh.getRange(98, 3, 40, 1).setNumberFormat('#,##0.00');
+  sh.getRange(98, 7, 40, 1).setNumberFormat('$#,##0.00');
+  thBand(sh.getRange(98, 1, 40, 8), false);
+  sh.getRange(138, 1).setValue('Total per month (parked ones left out)');
+  sh.getRange(138, 7).setFormula('=SUMIFS(' + PG_CM + 'N2:N200,' + PG_CM + 'W2:W200,"Out",' + PG_CM + 'E2:E200,"<>One-off",' + PG_CM + 'I2:I200,"<>Cancel",' + PG_CM + 'I2:I200,"<>Later")').setNumberFormat('$#,##0');
+  sh.getRange(138, 1, 1, 8).setFontWeight('bold').setBackground(TH.HEAD);
+
   sh.setFrozenRows(2);
   return sh;
 }
@@ -468,10 +484,42 @@ function pgMapTab(ss) {
       ',COLUMN()-MOD(COLUMN()-2,3)),1)="' + ch + '")').setBackground(bg).setFontColor(fg).setRanges([items]).build();
   };
   rules.push(line('+', '#e6f4ea', '#137333'), line('−', '#fdecea', '#b3261e'), line('⬅', '#e3f2fd', '#0b57d0'), line('➡', '#e3f2fd', '#0b57d0'));
+
+  // Credit cards, a second row of cards: what is owed, what will be charged to
+  // the card in the next days, and the account that pays it off.
+  var cards = acc.cards, k0 = rDo + 3, kNow = k0 + 1, j0 = k0 + 2, jN = 6, jEnd = j0 + jN - 1, kAfter = jEnd + 1, kDo = kAfter + 1;
+  cards.forEach(function (cd, j) {
+    var c = 2 + j * 3, nm = cd.name;
+    var J = sh.getRange(j0, c + 1, jN, 1), jl = sh.getRange(j0, c, jN, 1).getA1Notation(), ja = J.getA1Notation();
+    sh.getRange(k0, c, 1, 2).merge().setValue('💳 ' + nm).setBackground('#5b3fa0').setFontColor('#ffffff').setFontWeight('bold')
+      .setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle').setWrap(true);
+    sh.getRange(kNow, c).setValue('Owed since last payment');
+    sh.getRange(kNow, c + 1).setFormula('=IFERROR(INDEX(Dashboard!$B$54:$B$57,MATCH("' + nm + '",Dashboard!$A$54:$A$57,0)),0)').setNumberFormat('$#,##0');
+    sh.getRange(kNow, c, 1, 2).setBackground('#efe9fb').setFontWeight('bold').setFontSize(11).setFontColor('#3c2a78');
+    sh.getRange(j0, c).setFormula('=IFERROR(ARRAY_CONSTRAIN(ARRAYFORMULA(LET(' +
+      'q,QUERY({' + rng('C', R.l0, R.lEnd) + ',' + rng('F', R.l0, R.lEnd) + ',' + rng('H', R.l0, R.lEnd) + ',' + rng('B', R.l0, R.lEnd) + '},' +
+        '"select Col1, sum(Col2) where Col3 = \'' + nm + '\' and Col4 <= date \'"&TEXT(TODAY()+' + PG.MOVE_DAYS + ',"yyyy-mm-dd")&"\' ' +
+        'group by Col1 order by sum(Col2) desc label sum(Col2) \'\'",0),' +
+      'HSTACK("− "&INDEX(q,,1),-INDEX(q,,2)))),' + jN + ',2),"")');
+    J.setNumberFormat('+$#,##0;-$#,##0;$0').setHorizontalAlignment('right');
+    sh.getRange(j0, c, jN, 2).setFontSize(9);
+    sh.getRange(kAfter, c).setValue('To pay off (' + PG.MOVE_DAYS + ' days)');
+    sh.getRange(kAfter, c + 1).setFormula('=' + sh.getRange(kNow, c + 1).getA1Notation() + '-SUMIF(' + jl + ',"−*",' + ja + ')').setNumberFormat('$#,##0');
+    sh.getRange(kAfter, c, 1, 2).setFontWeight('bold').setFontSize(11).setBackground('#efe9fb').setFontColor('#3c2a78');
+    sh.getRange(kDo, c, 1, 2).merge().setValue(cd.payFrom ? 'Paid off from ' + cd.payFrom : 'Which account pays this card? (Config payFrom)')
+      .setWrap(true).setFontSize(9).setFontColor(TH.GREY).setVerticalAlignment('top');
+    sh.setRowHeight(kDo, 36);
+    sh.getRange(k0, c, kDo - k0 + 1, 2).setBorder(true, true, true, true, false, false, '#c9bfe6', SpreadsheetApp.BorderStyle.SOLID);
+  });
+  if (cards.length) {
+    var cItems = sh.getRange(j0, 2, jN, cards.length * 3);
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(MOD(COLUMN()-2,3)<2,LEFT(INDEX($A' + j0 + ':$Z' + jEnd + ',ROW()-' + (j0 - 1) +
+      ',COLUMN()-MOD(COLUMN()-2,3)),1)="−")').setBackground('#fdecea').setFontColor('#b3261e').setRanges([cItems]).build());
+  }
   sh.setConditionalFormatRules(rules);
 
   // Payments with no account set.
-  var n0 = rDo + 3;
+  var n0 = (cards.length ? kDo : rDo) + 3;
   pgSection(sh, n0, '❔ Payments with no account set — say which account pays them (Commitments › Account)', W);
   sh.getRange(n0 + 1, 2).setFormula('=IFERROR(ARRAY_CONSTRAIN(FILTER({' + rng('C', R.l0, R.lEnd) + ',' + rng('B', R.l0, R.lEnd) + ',' + rng('F', R.l0, R.lEnd) + '},' +
     rng('A', R.l0, R.lEnd) + '="(no account set)"),6,3),"None ✅")');
