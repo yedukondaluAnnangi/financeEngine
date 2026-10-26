@@ -9,6 +9,49 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-26 — demo sheets, then the attention-first pages in the real sheet
+
+**Asked:** one place to see everything (high level → detail), folded, attention first;
+"done" must be verified by the bank; Transactions raw; India in ₹ with CAD totals;
+actual vs planned months clearly marked; planned vs unplanned spending to change habits.
+Two demo spreadsheets were built first (scratchpad scripts, REST API, static snapshot),
+the user approved demo v2 ("build it").
+
+**Built** `AppScripts/Views.gs` (`3282ed0`, VERSION 2026-10-26.1): six script-written pages,
+placed first — 🏠 Home, 📒 Ledger, 🗂 Summary, 🧠 Habits, 🔮 Forecast, 🩺 Health.
+- Folding groups need a fixed row count, so these are **values, not formulas**, rebuilt by
+  `vwMaybeRefresh` on a poll where `planDaily` did nothing (it now returns true when it
+  worked): on a new day/version, or when Drive's `getLastUpdated()` of the sheet is newer
+  than the last build (any edit → rebuild within ~10 min). Menu: Finance › Refresh Home….
+- Each page is built on a fresh tab "<name> (building)" and swapped in, so old groups and
+  formats never linger; formats go in as whole 2-D arrays (one call per property).
+- One event model (`vwModel`): Transactions (past), Commitments due dates via
+  `planDueDates` starting after what Commitments already shows paid, overdue / ❔ / ⚠ rows
+  from Commitments' Status, Expected payments (💡 undecided, approved = planned), money
+  moves parsed from the Now tab's "⚠ Short … move about $X from … by …" text.
+- Home ticks: key per to-do (`cm|name|date`, `mv|account`, `ex|…`, `st|upload`) in a hidden
+  column; read back on the next build into script property `vw_ticks`. A ticked item that
+  no longer appears as due → "✅ Verified" (kept 7 days); still due after 3 days → ⚠.
+  Habits limits persist the same way (`vw_limits`, hidden key column).
+- Summary / Forecast estimate day-to-day spending per country as the last two full months
+  outside recurring (non one-off) Commitments categories.
+- Transactions gets a warning-only protection.
+
+**Gotchas:** a `Date` at UTC midnight written to a Toronto sheet shows the day before — use
+local noon. `setValues` turns "Sep 2026" into a date — prefix `'`. A regex char class
+`[=+\-@]` lost its backslash through heredoc + template literal and became the range `+-@`
+(digits included) — put `-` last. Recursion trap: Health ↔ Home to-do both needed the
+stale-account list → memoised `vwStale`. CRLF files: Node string splicing fails silently
+to match; use the Edit tool.
+
+**Open:** Notion finance migration (step 6 of the agreed plan); Cash log / To collect /
+House project lists; transfer pairing check (Health #5 placeholder replaced by
+"payments found in messages"); buffers + tax reserve % for a "safe to spend" figure;
+old tabs still visible (user to decide hide/delete); unlabelled rows; the car-lease
+payment is not on Commitments yet.
+
+---
+
 ## 2026-10-25 (evening) — parked items, Expected payments tab, business grouping
 
 **Asked:** park two items until savings are planned; a monthly family-support

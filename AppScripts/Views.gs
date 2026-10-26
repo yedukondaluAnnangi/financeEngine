@@ -127,7 +127,8 @@ function vwRead(ss) {
     now: vwValues(ss, PG.TAB_NOW),
     big: vwValues(ss, PG.TAB_BIG).t,
     homeRows: home.v, habitRows: habits.v,
-    lastRun: runs.length > 1 ? String(runs[runs.length - 1][0]) : '',
+    lastRun: runs.length < 2 ? '' : runs[runs.length - 1][0] instanceof Date
+      ? Utilities.formatDate(runs[runs.length - 1][0], CFG_TZ(), 'EEE d MMM, HH:mm') : String(runs[runs.length - 1][0]),
     accounts: CFG.ACCOUNTS.filter(function (a, i, all) {
       return !(CFG.BANKS[a.key] || {}).quiet && all.map(function (x) { return x.key; }).indexOf(a.key) === i;
     }).map(function (a) {
@@ -853,7 +854,7 @@ function vwHomePage(m) {
   if (!rows.length) p.rows.push(['', 'Nothing to do right now 🎉']);
   rows.forEach(function (t) {
     var r = p.rows.length + 1;
-    p.rows.push([t.ticked, t.what, t.when, t.seen,
+    p.rows.push([t.ticked, vwSafe(t.what), vwTxt(t.when), t.seen,
       '=IF(LEFT(D' + r + ',1)="✅",D' + r + ',IF(LEFT(D' + r + ',1)="⚠",D' + r + ',IF(A' + r + ',"🟡 You said done — waiting for the bank to show it","⏳ To do")))', '', t.key]);
   });
   var r1 = p.rows.length;
