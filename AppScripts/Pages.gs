@@ -121,12 +121,16 @@ function pgNowTab(ss) {
   banks.forEach(function (b, i) {
     var r = b0 + i, nm = '"' + b.name + '"', rate = pgRate(b.cur), sym = pgSym(b.cur);
     sh.getRange(r, 1).setValue(b.name);
-    // Balance: the newer of the last statement balance and what you typed on Assets & Debts.
+    // Balance: the newer of the last statement balance and what you typed on Assets & Debts,
     sh.getRange(r, 2).setFormula('=ARRAYFORMULA(LET(st,IFERROR(SORT(FILTER({TEXT(_Balances!D2:D,"yyyy-mm-dd"),_Balances!E2:E},_Balances!C2:C=' + nm + '),1,FALSE),""),' +
       'sd,IFERROR(DATEVALUE(INDEX(st,1,1)),""),sv,IFERROR(VALUE(INDEX(st,1,2)),""),' +
       'mv,IFERROR(INDEX(FILTER(' + PG_AD + 'E2:E,' + PG_AD + 'A2:A=' + nm + ',' + PG_AD + 'E2:E<>""),1),""),' +
       'md,IFERROR(INDEX(FILTER(' + PG_AD + 'F2:F,' + PG_AD + 'A2:A=' + nm + ',' + PG_AD + 'E2:E<>""),1),""),' +
-      'IF(AND(mv<>"",OR(sv="",AND(ISNUMBER(md),md>=sd))),HSTACK(mv,IF(md="","typed",md)),IF(sv="",HSTACK("",""),HSTACK(sv,sd)))))');
+      // Then roll it forward: every transaction on this account after that date.
+      'um,AND(mv<>"",OR(sv="",AND(ISNUMBER(md),md>=sd))),v,IF(um,mv,sv),d,IF(um,md,sd),' +
+      'last,MAXIFS(_Calc!$A$2:$A,_Calc!$C$2:$C,' + nm + '),' +
+      'IF(v="",HSTACK("",""),IF(NOT(ISNUMBER(d)),HSTACK(v,"typed"),' +
+      'HSTACK(v+SUMIFS(_Calc!$F$2:$F,_Calc!$C$2:$C,' + nm + ',_Calc!$A$2:$A,">"&d),MAX(d,last))))))');
     sh.getRange(r, 4).setFormula('=IF(B' + r + '="","",B' + r + '*' + rate + ')');
     // Income on Commitments landing here in the window (weekly pay counted per payday).
     var z = PG_CM + 'Z2:Z200', e = PG_CM + 'E2:E200';
@@ -160,8 +164,8 @@ function pgNowTab(ss) {
   sh.getRange(bTot, 10).setFormula('=SUM(J' + b0 + ':J' + bEnd + ')');
   sh.getRange(bTot, 11).setValue('Spare across all accounts, after everything due in the next ' + PG.MOVE_DAYS + ' days');
   sh.getRange(bTot, 1, 1, W).setBackground(TH.GOOD_BG).setFontWeight('bold');
-  pgNote(sh.getRange(bTot + 1, 1).setValue('Balance = the last statement that carried one, or what you typed on Assets & Debts (the newer wins); ' +
-    'payments since its date are not in it yet. Card bills = spent since the card\'s last payment, counted against the account that pays the card. ' +
+  pgNote(sh.getRange(bTot + 1, 1).setValue('Balance = the last statement that carried one, or what you typed on Assets & Debts (the newer wins), ' +
+    'plus every transaction uploaded since that date — type a balance once and it keeps itself current. Card bills = spent since the card\'s last payment, counted against the account that pays the card. ' +
     'HST you collected is kept aside in the account it lands in.'));
 
   // 2. Credit cards.
