@@ -49,6 +49,14 @@ Money map on the *next* poll (own stamp `pg_day`, own `pg_version`). **Gotcha:**
 `String.replace` treats `$'` in the replacement as "text after the match" — splice code
 with slice/indexOf or a replacer function.
 
+**Then:** Money map rebuilt as colour-coded cells, one card per account (`561cc51`, `6b2f721`,
+fix `13bc831`): org charts allow one box colour only. Balances now **roll forward**
+(`33c566d`): newest of statement / typed balance + every transaction after its date, so RBC
+and CIBC (CSV has no balance) need a balance typed once. RBC seeded from the bank's
+low-balance alert email (-55.45, dated the day before the 3 AM alert). Found: GM Financial
+car-lease payment bounced NSF on Oct 22 — not on Commitments yet (asked user).
+**Gotcha:** `"x "&INDEX(q,,1)` inside LET without ARRAYFORMULA keeps only the first row.
+
 **Open:** first WhatsApp/Gmail scan done (6 rows, user to Approve/Reject); Neo card balance is understated (only spend since last payment is known); a TD "card / overdraft charge"
 is still personal Bank fees (pattern shared across accounts); RBC/CIBC balances.
 
