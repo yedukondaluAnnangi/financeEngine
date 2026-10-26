@@ -399,7 +399,7 @@ function pgMapTab(ss) {
   // The whole picture in one line.
   sh.getRange(3, 2, 1, W - 1).merge().setFormula('="💰 All your accounts:  now "&TEXT(' + N + 'D' + R.bTot + ',"$#,##0")&' +
     '"     →     after the next ' + PG.MOVE_DAYS + ' days "&TEXT(' + N + 'J' + R.bTot + ',"$#,##0;-$#,##0")')
-    .setFontSize(15).setFontWeight('bold').setFontColor('#ffffff').setBackground(TH.NAVY)
+    .setFontSize(13).setFontWeight('bold').setFontColor('#ffffff').setBackground(TH.NAVY)
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sh.setRowHeight(3, 40);
 
@@ -410,10 +410,10 @@ function pgMapTab(ss) {
     var labA1 = L.getA1Notation(), amtA1 = A.getA1Notation();
 
     sh.getRange(r0, c, 1, 2).merge().setValue(nm).setBackground(TH.NAVY).setFontColor('#ffffff').setFontWeight('bold')
-      .setFontSize(12).setHorizontalAlignment('center').setVerticalAlignment('middle');
+      .setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle').setWrap(true);
     sh.getRange(rNow, c).setValue('Now');
     sh.getRange(rNow, c + 1).setFormula('=IF(' + N + 'B' + r + '="","?",' + N + 'B' + r + ')').setNumberFormat(balFmt(b.cur));
-    sh.getRange(rNow, c, 1, 2).setBackground('#e8f0fe').setFontWeight('bold').setFontSize(13).setFontColor(TH.NAVY);
+    sh.getRange(rNow, c, 1, 2).setBackground('#e8f0fe').setFontWeight('bold').setFontSize(11).setFontColor(TH.NAVY);
 
     // In / out lines, biggest first within each kind.
     var nowK = N + 'K' + r, blank = '{"",""}';
@@ -432,18 +432,20 @@ function pgMapTab(ss) {
       'all,VSTACK(inc,mvin,pay,crd,hst,mvout),FILTER(all,INDEX(all,,1)<>"")),' + PG_MAP_ITEMS + ',2),"")');
     A.setNumberFormat(fmtOf(b.cur)).setHorizontalAlignment('right');
     L.setWrap(true);
+    sh.getRange(i0, c, PG_MAP_ITEMS, 2).setFontSize(9);
 
     // After the payments and the transfers.
     sh.getRange(rAfter, c).setValue('After ' + PG.MOVE_DAYS + ' days');
     sh.getRange(rAfter, c + 1).setFormula('=IF(' + N + 'B' + r + '="","?",' + N + 'I' + r + '+SUMIF(' + labA1 + ',"⬅*",' + amtA1 + ')+SUMIF(' + labA1 + ',"➡*",' + amtA1 + '))')
       .setNumberFormat(balFmt(b.cur));
-    sh.getRange(rAfter, c, 1, 2).setFontWeight('bold').setFontSize(13);
+    sh.getRange(rAfter, c, 1, 2).setFontWeight('bold').setFontSize(11);
     sh.getRange(rDo, c, 1, 2).merge().setFormula('=' + nowK).setWrap(true).setFontSize(9).setFontColor(TH.GREY).setVerticalAlignment('top');
     sh.setRowHeight(rDo, 48);
     sh.getRange(r0, c, rDo - r0 + 1, 2).setBorder(true, true, true, true, false, false, '#c5cbd6', SpreadsheetApp.BorderStyle.SOLID);
-    sh.setColumnWidth(c, 200);
-    sh.setColumnWidth(c + 1, 105);
-    sh.setColumnWidth(c + 2, 18);
+    // Narrow enough that four cards fit a laptop screen.
+    sh.setColumnWidth(c, 160);
+    sh.setColumnWidth(c + 1, 88);
+    sh.setColumnWidth(c + 2, 10);
 
     var after = sh.getRange(rAfter, c, 1, 2), afterA1 = sh.getRange(rAfter, c + 1).getA1Notation();
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER(' + afterA1 + '),' + afterA1 + '>=0)')
@@ -451,7 +453,7 @@ function pgMapTab(ss) {
     rules.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND(ISNUMBER(' + afterA1 + '),' + afterA1 + '<0)')
       .setBackground(TH.BAD_BG).setFontColor(TH.BAD).setRanges([after]).build());
   });
-  sh.setColumnWidth(1, 18);
+  sh.setColumnWidth(1, 10);
 
   // Line colours across all cards: by the first character of the label.
   var items = sh.getRange(i0, 2, PG_MAP_ITEMS, W - 1);
