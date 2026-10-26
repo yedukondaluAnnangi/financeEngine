@@ -421,7 +421,8 @@ function pgMapTab(ss) {
 
     // In / out lines, biggest first within each kind.
     var nowK = N + 'K' + r, blank = '{"",""}';
-    sh.getRange(i0, c).setFormula('=IFERROR(ARRAY_CONSTRAIN(LET(' +
+    // ARRAYFORMULA: "− "&INDEX(q,,1) on its own would keep only the first line.
+    sh.getRange(i0, c).setFormula('=IFERROR(ARRAY_CONSTRAIN(ARRAYFORMULA(LET(' +
       'inc,IF(' + N + 'E' + r + '>0,HSTACK("+ Coming in",' + N + 'E' + r + '),' + blank + '),' +
       'mvin,IF(LEFT(' + nowK + ',1)="⚠",HSTACK("⬅ Move in "&REGEXEXTRACT(' + nowK + ',"(from .*)"),-' + N + 'I' + r + '),' + blank + '),' +
       'q,QUERY({' + rng('A', R.l0, R.lEnd) + ',' + rng('I', R.l0, R.lEnd) + ',' + rng('D', R.l0, R.lEnd) + ',' + rng('B', R.l0, R.lEnd) + '},' +
@@ -431,9 +432,9 @@ function pgMapTab(ss) {
       'crd,IF(' + N + 'G' + r + '>0,HSTACK("− Card bills",-' + N + 'G' + r + '),' + blank + '),' +
       'hst,IF(' + N + 'H' + r + '>0,HSTACK("− HST to keep for CRA",-' + N + 'H' + r + '),' + blank + '),' +
       'k,IFERROR(FILTER({' + rng('A', R.b0, R.bEnd) + ',' + rng('J', R.b0, R.bEnd) + '},LEFT(' + rng('K', R.b0, R.bEnd) + ',1)="⚠",' +
-        'ISNUMBER(SEARCH("from ' + nm + '",' + rng('K', R.b0, R.bEnd) + '))),""),' +
+        'ISNUMBER(SEARCH("from ' + nm + '",' + rng('K', R.b0, R.bEnd) + '))),NA()),' +
       'mvout,IFERROR(HSTACK("➡ Send to "&INDEX(k,,1),INDEX(k,,2)/' + rate + '),' + blank + '),' +
-      'all,VSTACK(inc,mvin,pay,crd,hst,mvout),FILTER(all,INDEX(all,,1)<>"")),' + PG_MAP_ITEMS + ',2),"")');
+      'all,VSTACK(inc,mvin,pay,crd,hst,mvout),FILTER(all,INDEX(all,,1)<>""))),' + PG_MAP_ITEMS + ',2),"")');
     A.setNumberFormat(fmtOf(b.cur)).setHorizontalAlignment('right');
     L.setWrap(true);
     sh.getRange(i0, c, PG_MAP_ITEMS, 2).setFontSize(9);
