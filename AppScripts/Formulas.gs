@@ -395,10 +395,17 @@ function fxDashboardCells() {
 
   // Credit cards: what has been spent since the last payment.
   title(52, 'Credit cards');
-  head(53, ['Card', 'Spent since last payment', 'Last payment', 'Statements up to']);
+  head(53, ['Card', 'Owed (typed balance + later charges, or spent since last payment)', 'Last payment', 'Statements up to']);
   put(54, 1, '=IFERROR(ARRAY_CONSTRAIN(FILTER(UNIQUE(FILTER(_Calc!C2:C,_Calc!C2:C<>"")),REGEXMATCH(UNIQUE(FILTER(_Calc!C2:C,_Calc!C2:C<>"")),"(?i)mastercard|visa|regalia|credit")),4,1),"")');
   var lastPay = 'MAXIFS(_Calc!A2:A,_Calc!C2:C,a,_Calc!I2:I,"Creditcard",_Calc!H2:H,">0")';
-  put(54, 2, '=BYROW(A54:A57,LAMBDA(a,IF(a="","",-SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!A2:A,">"&' + lastPay + ',_Calc!J2:J,"<>Moved"))))');
+  // A balance typed on Assets & Debts (the card's full amount owed) wins: it rolls forward with
+  // every charge and payment after its date. Without one: spent since the last payment seen.
+  var AD = "'" + BS.TAB_INPUT + "'!";
+  put(54, 2, '=BYROW(A54:A57,LAMBDA(a,IF(a="","",LET(' +
+    'typedCad,IFERROR(INDEX(FILTER(' + AD + 'H2:H,' + AD + 'A2:A=a,' + AD + 'E2:E<>""),1),""),' +
+    'typedOn,IFERROR(INDEX(FILTER(' + AD + 'F2:F,' + AD + 'A2:A=a,' + AD + 'E2:E<>""),1),""),' +
+    'IF(AND(ISNUMBER(typedCad),ISNUMBER(typedOn)),typedCad-SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!A2:A,">"&typedOn),' +
+    '-SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!A2:A,">"&' + lastPay + ',_Calc!J2:J,"<>Moved"))))))');
   put(54, 3, '=BYROW(A54:A57,LAMBDA(a,IF(a="","",IF(' + lastPay + '=0,"none seen",' + lastPay + '))))');
   put(54, 4, '=BYROW(A54:A57,LAMBDA(a,IF(a="","",MAXIFS(_Calc!A2:A,_Calc!C2:C,a))))');
   styles.money2.push([54, 2, 4, 1]); styles.date.push([54, 3, 4, 2]);
