@@ -54,6 +54,8 @@ hidden tab un-hides it — the old `vzArrange` would have undone any hiding.
 
 **Locks** (`c14be67`): `vwProtectAll` — warning-only protections (an owner can never be hard-locked), fact tabs whole-sheet with input columns left open (Home A, Habits G), input tabs only on formula/Claude columns; tab colours blue / yellow / grey. Card balances typed on Assets & Debts roll forward as owed (`5ec7b0a`, Dashboard B54). Proposed next: 4 read tabs (Today = Home+Now+Money map+Health, Money = Ledger+Summary, Future = Forecast+Big picture+Balance Sheet, Habits) + 3 input tabs.
 
+**🏠 Today** (`c4ec888`, `6261fdf`): one page = banner + 4 tiles + Do-now ticks (shared with Home via key column H) + each account's 14 days with every line (moves, payments + how paid, HST, card bills folded to card charges) + cards + health + 15–30 days. Renderer gained merges/heights. **Bugs:** (1) Commitments AA is a formula column (`Paid last month`, read by the Dashboard) — the How column had been put there; moved to AC/AD (`PLAN.HOW_COL` 29), sheet widened to 30 cols. (2) Seven pages + locks passed the 6-minute limit silently (stopped mid-locks, tab order never ran, retried every poll) — now rendered by priority within `VW.TIME_BUDGET_MS`, remainder in `vw_pending`. (3) "TD" matched both TD accounts — shortest matching name wins; Commitments TD rows set to the full name (Now uses SEARCH).
+
 **Open:** user answers pending (second TD account, PhonePe = Kotak?, car-insurance match,
 lease, home insurance, decisions, loan balances, HST schedule, house budget, old tabs,
 Notion, Gmail balance reading needs a new OAuth scope → one manual re-authorisation).
