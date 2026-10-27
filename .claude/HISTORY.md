@@ -9,6 +9,37 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-27 — gap audit across tabs, first round of fixes
+
+**Asked:** list every gap between the tabs (44 found: transfers, balances, Commitments
+matching, labels, rates, duplicate tabs, forecast blind spots), then fix them; ask only
+for one-time facts; make it automatic from now on; can balances be fetched automatically?
+
+**Changed** (`bb96b47`, VERSION 2026-10-27.2):
+- **One INR rate.** Categories F = `GOOGLEFINANCE("CURRENCY:INRCAD")` (Config fallback, now
+  0.0148). `_Calc` H/L, `planReadTx` (Dashboard) and Views convert foreign rows with it, not
+  the ingest-time Amount CAD. Found because a Remitly transfer's INR arrival was ~9% above
+  the CAD that left — the old fixed rate was stale. Month Ahead's rate cell now points here.
+- **Transfer matching** (`vwPairTransfers`): own-account moves paired out↔in across accounts
+  (±8%, −2…+7 days, swap pass for same-day look-alikes). Unmatched after 7 days → Ledger
+  Needs-you "↔" and Health #5. Category "Transfer - untracked account" opts a row out.
+- **Forecast:** weekly income whose Commitments note says "N h" loses Ontario statutory
+  holidays in the week a payday covers (lag 11 days, from the Thanksgiving short pay).
+- Balance Sheet + Accounts read bank balances from Now (rolled forward) — no second number.
+- Now: the donor account's "Enough" text subtracts what it is asked to send.
+- STALE_DAYS = 7 on Formulas / Plan / Pages / Views (one meaning of "up to date").
+- Sheet data: two Commitments prices, 3 categories (Car lease, Personal care, Transfer -
+  untracked account), 15 Payees rules, 17 rows labelled.
+
+**Gotchas:** a heredoc-fed JS template turned `\b` into a literal backspace character in a
+regex — scan `.gs` files for control characters after scripted edits.
+
+**Open:** user answers pending (second TD account, PhonePe = Kotak?, car-insurance match,
+lease, home insurance, decisions, loan balances, HST schedule, house budget, old tabs,
+Notion, Gmail balance reading needs a new OAuth scope → one manual re-authorisation).
+
+---
+
 ## 2026-10-26 — demo sheets, then the attention-first pages in the real sheet
 
 **Asked:** one place to see everything (high level → detail), folded, attention first;
