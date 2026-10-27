@@ -31,7 +31,7 @@ var FX = {
   COMMIT_CALC: ['CAD each', 'Per month (CAD)', 'Per year (CAD)', 'Last paid', 'Last amount',
                 'This cycle due', 'Next due', 'Status', 'Due this month (CAD)', 'Paid this month (CAD)',
                 'In / Out', 'Counts as', 'Still owed this month (CAD)', 'Days to next', 'Paid last month (CAD)'],
-  STALE_DAYS: 14
+  STALE_DAYS: 7          // same as PLAN / PG / VW: one meaning of "up to date" everywhere
 };
 
 /** Sheet array literal of the accounts marked quiet in CFG.BANKS, e.g. {"CIBC ••680"}. */
@@ -60,6 +60,8 @@ function fxCalcFormula() {
   var counts = 'IF(' + T + 'L2:L="Reversal pair","Moved",IF(' + T + 'J2:J="","Living",' +
                'IFERROR(VLOOKUP(' + T + 'J2:J,Categories!A2:C,3,0),"Living")))';
   var group = 'IF(' + T + 'J2:J="","Not labelled yet",IFERROR(VLOOKUP(' + T + 'J2:J,Categories!A2:C,2,0),"Other"))';
+  // CAD at the Categories rate (live), not the rate stored when the row was ingested.
+  var cad = 'IF(' + T + 'H2:H="CAD",' + T + 'I2:I,' + T + 'G2:G*IFERROR(VLOOKUP(' + T + 'H2:H,Categories!E2:F,2,0),0))';
   return '=ARRAYFORMULA(IF(' + T + 'A2:A="",,{' +
     date + ',' +
     'TEXT(' + date + ',"yyyy-mm"),' +
@@ -68,11 +70,11 @@ function fxCalcFormula() {
     T + 'F2:F,' +
     T + 'G2:G,' +
     T + 'H2:H,' +
-    T + 'I2:I,' +
+    cad + ',' +
     T + 'J2:J,' +
     counts + ',' +
     group + ',' +
-    'IF(' + counts + '="Income",' + T + 'I2:I,-' + T + 'I2:I),' +
+    'IF(' + counts + '="Income",' + cad + ',-' + cad + '),' +
     T + 'L2:L}))';
 }
 
@@ -132,11 +134,26 @@ function fxCategoriesTab(ss, extraCats) {
   if (sh.getRange('F8').getValue() === '') sh.getRange('F8').setValue(0.13).setNumberFormat('0%');
   sh.getRange('E9').setValue('Deposits in category "Business income" include it; the Dashboard takes it out.').setFontColor('#5f6368');
 
-  // Currency rates: always equal to Config.gs.
-  var rates = Object.keys(CFG.FX_TO_CAD).map(function (k) { return [k, CFG.FX_TO_CAD[k]]; });
+  // Currency rates: today's market rate from Google Finance, Config.gs if that fails.
+  // Every CAD figure (_Calc, Now, Dashboard, the Views pages) converts with this one cell.
+  var rates = Object.keys(CFG.FX_TO_CAD).map(function (k) {
+    return [k, k === 'CAD' ? 1 : '=IFERROR(GOOGLEFINANCE("CURRENCY:' + k + 'CAD"),' + CFG.FX_TO_CAD[k] + ')'];
+  });
   sh.getRange(2, 5, Math.max(rates.length, 5), 2).clearContent();
   sh.getRange(2, 5, rates.length, 2).setValues(rates);
+  sh.getRange(2, 6, rates.length, 1).setNumberFormat('0.000000');
   return sh;
+}
+
+/** The rates on the Categories tab ({CAD: 1, INR: …}); Config.gs for anything missing. */
+function fxRates(ss) {
+  var out = {};
+  Object.keys(CFG.FX_TO_CAD).forEach(function (k) { out[k] = CFG.FX_TO_CAD[k]; });
+  var sh = getTab(ss, FX.CATS);
+  if (sh) sh.getRange(2, 5, 6, 2).getValues().forEach(function (r) {
+    if (r[0] && typeof r[1] === 'number' && r[1] > 0) out[String(r[0]).trim()] = r[1];
+  });
+  return out;
 }
 
 

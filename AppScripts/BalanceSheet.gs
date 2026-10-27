@@ -114,7 +114,9 @@ function bsViewTab(ss) {
   var mine = function (kind) {   // your rows of one kind, with an amount
     return 'IFERROR(FILTER({' + IN + 'A2:A,' + IN + 'C2:C,ARRAYFORMULA(IF(' + IN + 'A2:A<>"","You entered","")),' +
            'ARRAYFORMULA(IF(' + IN + 'F2:F="","",TEXT(' + IN + 'F2:F,"yyyy-mm-dd"))),' + IN + 'E2:E,' + IN + 'D2:D,' + IN + 'H2:H},' +
-           IN + 'B2:B="' + kind + '",' + IN + 'E2:E<>""),{"","","","","","",""})';
+           IN + 'B2:B="' + kind + '",' + IN + 'E2:E<>"",' +
+           // a typed bank balance is already in the bank rows (via Now)
+           'ISNA(MATCH(' + IN + 'A2:A,{' + pgAccounts().banks.map(function (b) { return '"' + b.name + '"'; }).join(';') + '},0))),{"","","","","","",""})';
   };
   var notMine = function (nameExpr) {  // drop an automatic row you entered yourself
     return 'ISNA(MATCH(' + nameExpr + ',FILTER(' + IN + 'A2:A,' + IN + 'E2:E<>""),0))';
@@ -158,11 +160,14 @@ function bsViewTab(ss) {
   section(a0 - 2, '🟢 What you own');
   sh.getRange(a0 - 1, 1, 1, 7).setValues([head]);
   thColHead(sh.getRange(a0 - 1, 1, 1, 7));
-  var bank = 'LET(a,UNIQUE(FILTER(_Balances!C2:C,_Balances!C2:C<>"")),acc,FILTER(a,' + notMine('a') + '),' +
-    'pick,LAMBDA(x,k,INDEX(SORT(FILTER({ARRAYFORMULA(TEXT(_Balances!D2:D,"yyyy-mm-dd")),_Balances!E2:E},_Balances!C2:C=x),1,FALSE),1,k)),' +
+  // Bank balances come from the Now tab — statement or typed balance, rolled forward with every
+  // later transaction — so this tab and Now never show two numbers for one account.
+  var L = pgNowRows(pgAccounts().banks.length), NOW = "'" + PG.TAB_NOW + "'!";
+  var nowA = NOW + 'A' + L.b0 + ':A' + L.bEnd, nowB = NOW + 'B' + L.b0 + ':B' + L.bEnd, nowC = NOW + 'C' + L.b0 + ':C' + L.bEnd;
+  var bank = 'LET(k,FILTER(HSTACK(' + nowA + ',' + nowB + ',' + nowC + '),' + nowA + '<>"",ISNUMBER(' + nowB + ')),acc,INDEX(k,,1),amt,INDEX(k,,2),' +
     'cur,MAP(acc,LAMBDA(x,IFERROR(INDEX(FILTER(_Calc!G2:G,_Calc!C2:C=x),1),"CAD"))),' +
-    'amt,MAP(acc,LAMBDA(x,pick(x,2))),' +
-    'HSTACK(acc,MAP(acc,LAMBDA(x,"Cash & bank")),MAP(acc,LAMBDA(x,"Last statement")),MAP(acc,LAMBDA(x,pick(x,1))),amt,cur,' +
+    'HSTACK(acc,MAP(acc,LAMBDA(x,"Cash & bank")),MAP(acc,LAMBDA(x,"Balance + later transactions")),' +
+    'MAP(INDEX(k,,3),LAMBDA(d,IF(ISNUMBER(d),TEXT(d,"yyyy-mm-dd"),""))),amt,cur,' +
     'MAP(amt,cur,LAMBDA(v,c,v*' + BS_RATE('c') + '))))';
   var house = 'LET(v,SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"House"),n,"House under construction (cost so far)",' +
     'IF(AND(v>0,' + notMine('n') + '),{n,"Property","Your transactions",' + latest + ',v,"CAD",v},{"","","","","","",""}))';

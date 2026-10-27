@@ -30,6 +30,13 @@ var VW = {
   VERIFIED_KEEP_DAYS: 7,  // a ✅ Verified line stays on Home this long
   STALE_DAYS: 7,          // an account with no data for longer needs a statement
   MIN_GAP_MIN: 10,        // at most one edit-driven rebuild per this many minutes
+  PAIR_BEFORE: 2,         // a transfer may land this many days before it leaves (bank dating)…
+  PAIR_AFTER: 7,          // …or this many after (Remitly, e-transfers)
+  PAIR_SLACK: 0.08,       // amounts may differ this much (exchange rate, fees)
+  PAIR_GRACE: 7,          // an unmatched transfer is flagged once it is this old
+  PAIR_LOOKBACK: 120,     // …and only if it is younger than this
+  HOURLY_NOTE: /\b\d+(\.\d+)?\s*h\b/i,   // Commitments notes like "37.5 h × $…" = paid by the hour
+  HOURLY_LAG: 11,         // a Friday payday pays the Mon–Fri week that started this many days before
   MOVED: 'Moved between your accounts',
   UNPLANNED_GROUPS: ['Lifestyle', 'Fees & charges'],
   UNPLANNED_CATS: ['Subscription - cancel'],
@@ -172,7 +179,7 @@ function vwModel(d) {
   d.tx.forEach(function (r) {
     var date = pCellIso(r[1]), amt = vwNum(r[6]);
     if (!date || !amt || String(r[11]) === 'Reversal pair') return;
-    var cur = String(r[7] || 'CAD'), cad = r[8] === '' || r[8] == null ? amt * (rate[cur] || 0) : vwNum(r[8]);
+    var cur = String(r[7] || 'CAD'), cad = cur !== 'CAD' || r[8] === '' || r[8] == null ? amt * (rate[cur] || 0) : vwNum(r[8]);
     var catg = String(r[9] || '').trim(), kind = m.groupOf(catg);
     var unl = !catg || kind === 'Not labelled yet';
     var payee = String(r[5] || '').trim();
@@ -206,8 +213,17 @@ function vwModel(d) {
         from = pAddDays(cycle, 1);
       }
     } else if (cycle) from = cycle < today ? today : cycle;
+    var hourly = c.income && /^weekly$/i.test(c.freq) && VW.HOURLY_NOTE.test(c.notes);
     planDueDates(c, from, horizon).forEach(function (when) {
-      ev.push(vwCm(m, c, r, when, '🗓 Planned', 'planned'));
+      var e = vwCm(m, c, r, when, '🗓 Planned', 'planned');
+      // Paid by the hour: a statutory holiday in the week this payday covers is unpaid.
+      var off = hourly ? vwHolidaysIn(pAddDays(when, -VW.HOURLY_LAG), pAddDays(when, -VW.HOURLY_LAG + 4)) : [];
+      if (off.length) {
+        var k = (5 - off.length) / 5;
+        e.amt *= k; e.cad *= k;
+        e.status = '🗓 Planned — ' + off.length + ' holiday' + (off.length > 1 ? 's' : '') + ' unpaid (' + off.map(vwDay).join(', ') + ')';
+      }
+      ev.push(e);
     });
   });
 
@@ -232,11 +248,92 @@ function vwModel(d) {
       tag: 'todo', moveTo: mv.to, source: 'Now tab · ' + mv.text });
   });
 
+  vwPairTransfers(m);
+
   // Facts the other pages share.
   m.lastData = {};
   ev.forEach(function (e) { if (e.past && (!m.lastData[e.acct] || e.date > m.lastData[e.acct])) m.lastData[e.acct] = e.date; });
   m.nowInfo = vwNowInfo(d);
   return m;
+}
+
+/**
+ * Own-account transfers that left one account and arrived in another are paired up
+ * (amounts within PAIR_SLACK at today's rate, dates within PAIR_BEFORE / PAIR_AFTER).
+ * One side alone, older than PAIR_GRACE days, needs you: money that vanished, or an
+ * account the sheet does not track (label it "Transfer - untracked account").
+ */
+function vwPairTransfers(m) {
+  var moves = m.ev.filter(function (e) {
+    return e.past && e.kind === VW.MOVED && !/^reversal$/i.test(e.catg) && !/untracked/i.test(e.catg);
+  });
+  var outs = moves.filter(function (e) { return e.cad < 0; }), ins = moves.filter(function (e) { return e.cad > 0; });
+  var fits = function (o, x) {
+    if (x.acct === o.acct) return false;
+    var days = pDaysBetween(o.date, x.date);
+    return days >= -VW.PAIR_BEFORE && days <= VW.PAIR_AFTER && Math.abs(x.cad + o.cad) <= Math.max(5, VW.PAIR_SLACK * -o.cad);
+  };
+  var score = function (o, x) { return Math.abs(x.cad + o.cad) / -o.cad + Math.abs(pDaysBetween(o.date, x.date)) / 100; };
+  outs.sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (o) {
+    var best = null;
+    ins.forEach(function (x) { if (!x.pair && fits(o, x) && (!best || score(o, x) < score(o, best))) best = x; });
+    if (best) { o.pair = best; best.pair = o; }
+  });
+  // Same-day look-alikes (two $3,000 moves) can cross: an unmatched departure takes a
+  // matched arrival when its partner can move to an arrival nobody took.
+  outs.forEach(function (o) {
+    if (o.pair) return;
+    ins.some(function (x) {
+      if (!x.pair || !fits(o, x)) return false;
+      var o2 = x.pair, y = ins.filter(function (z) { return !z.pair && fits(o2, z); })[0];
+      if (!y) return false;
+      o.pair = x; x.pair = o; o2.pair = y; y.pair = o2;
+      return true;
+    });
+  });
+  outs.forEach(function (o) {
+    if (!o.pair) return;
+    var x = o.pair;
+    o.source = '↔ arrived in ' + vwShort(x.acct) + ' ' + vwDay(x.date) + ' · ' + o.source;
+    x.source = '↔ came from ' + vwShort(o.acct) + ' ' + vwDay(o.date) + ' · ' + x.source;
+  });
+  m.unpaired = moves.filter(function (e) {
+    var age = pDaysBetween(e.date, m.today);
+    return !e.pair && age >= VW.PAIR_GRACE && age <= VW.PAIR_LOOKBACK;
+  });
+  m.unpaired.forEach(function (e) {
+    e.tag = 'unpaired';
+    e.status = e.cad < 0 ? '↔ Left ' + vwShort(e.acct) + ' — never arrived in another of your accounts'
+                         : '↔ Arrived — never seen leaving another of your accounts';
+  });
+}
+
+/** Ontario statutory holidays (weekday dates as observed) between two ISO dates. */
+function vwHolidaysIn(from, to) {
+  var out = [];
+  for (var y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) {
+    vwHolidays(y).forEach(function (d) { if (d >= from && d <= to) out.push(d); });
+  }
+  return out;
+}
+
+function vwHolidays(y) {
+  var iso = function (m, d) { return y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2); };
+  var dow = function (s) { return pDate(s).getUTCDay(); };
+  var nth = function (m, wd, n) { var s = iso(m, 1); s = pAddDays(s, (wd - dow(s) + 7) % 7); return pAddDays(s, 7 * (n - 1)); };
+  var observed = function (s) { var d = dow(s); return d === 6 ? pAddDays(s, 2) : d === 0 ? pAddDays(s, 1) : s; };
+  // Easter (anonymous Gregorian algorithm) for Good Friday.
+  var a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25),
+      g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4,
+      l = (32 + 2 * e + 2 * i - h - k) % 7, mm = Math.floor((a + 11 * h + 22 * l) / 451);
+  var em = Math.floor((h + l - 7 * mm + 114) / 31), ed = ((h + l - 7 * mm + 114) % 31) + 1;
+  var victoria = pAddDays(iso(5, 25), -((dow(iso(5, 25)) + 6) % 7 || 7));
+  var xmas = iso(12, 25), boxing = iso(12, 26);
+  var xd = dow(xmas);
+  var xObs = xd === 6 ? pAddDays(xmas, 2) : xd === 0 ? pAddDays(xmas, 1) : xmas;
+  var bObs = xd === 6 ? pAddDays(xmas, 3) : xd === 5 ? pAddDays(xmas, 3) : xd === 0 ? pAddDays(xmas, 2) : boxing;
+  return [observed(iso(1, 1)), nth(2, 1, 3), pAddDays(iso(em, ed), -2), victoria, observed(iso(7, 1)),
+          nth(9, 1, 1), nth(10, 1, 2), xObs, bObs];
 }
 
 function vwCm(m, c, r, when, status, tag) {
@@ -429,7 +526,7 @@ function vwLedgerPage(m) {
   }
 
   var ev = m.ev;
-  var needs = ev.filter(function (e) { return ['overdue', 'check', 'todo', 'found', 'unknown', 'label'].indexOf(e.tag) !== -1; });
+  var needs = ev.filter(function (e) { return ['overdue', 'check', 'todo', 'found', 'unknown', 'unpaired', 'label'].indexOf(e.tag) !== -1; });
   var next = ev.filter(function (e) { return !e.past && e.tag === 'planned' && e.date <= in30; }).sort(byDate);
   var later = ev.filter(function (e) { return !e.past && e.tag === 'planned' && e.date > in30 && e.date.slice(0, 7) <= endLater; }).sort(byDate);
   var done = ev.filter(function (e) { return e.past; }).sort(function (a, b) { return -byDate(a, b); });
@@ -437,6 +534,7 @@ function vwLedgerPage(m) {
   section('🔴 NEEDS YOU', needs, VW.C.BAD, function (l) {
     [['🔴 Overdue', 'overdue'], ['⚠ Check — charged after you cancelled', 'check'], ['⏳ To do now (money moves)', 'todo'],
      ['💡 Found in your messages — approve or reject on Expected payments', 'found'], ['❔ Can\'t tell yet — upload a newer statement', 'unknown'],
+     ['↔ Transfers that did not match — money that left but never arrived (or the other way)', 'unpaired'],
      ['🏷 Needs a label — add a Payees rule', 'label']].forEach(function (x) {
       sub(x[0], l.filter(function (e) { return e.tag === x[1]; }).sort(byDate));
     });
@@ -738,16 +836,22 @@ function vwHealthChecks(m) {
     od.length ? od.map(function (e) { return e.what + ' (' + e.status.replace(/^\S+\s/, '') + ')'; }).join(' · ') : 'Nothing overdue',
     od.length ? 'Pay it, or set it to Cancel / Later on Commitments' : '—');
 
+  var up = m.unpaired || [];
+  add('5. Transfers arrive — every move between your accounts seen on both sides', up.length ? '🔴' : '✅',
+    up.length ? up.length + ' not matched: ' + up.slice(0, 6).map(function (e) { return vwShort(e.acct) + ' ' + vwDay(e.date) + ' $' + Math.abs(vwR(e.cad)).toLocaleString('en-US'); }).join(' · ') + (up.length > 6 ? ' …' : '')
+      : 'All matched',
+    up.length ? 'Ledger › 🔴 Needs you › ↔ — upload the missing account, or label it "Transfer - untracked account"' : '—');
+
   var found = m.ev.filter(function (e) { return e.tag === 'found'; });
-  add('5. Payments found in messages decided', found.length ? '⚠' : '✅',
+  add('6. Payments found in messages decided', found.length ? '⚠' : '✅',
     found.length ? found.length + ' waiting: ' + found.map(function (e) { return e.what; }).join(' · ') : 'None waiting',
     found.length ? 'Expected payments tab › Your decision: Approve or Reject' : '—');
 
   var late = vwTickRows(m).filter(function (t) { return /^⚠/.test(t.seen); });
-  add('6. Ticked "done" but not seen in the bank after ' + VW.TICK_WAIT_DAYS + ' days', late.length ? '⚠' : '✅',
+  add('7. Ticked "done" but not seen in the bank after ' + VW.TICK_WAIT_DAYS + ' days', late.length ? '⚠' : '✅',
     late.length ? late.map(function (t) { return t.what; }).join(' · ') : 'None', late.length ? 'Check the payment went through; upload the statement' : '—');
 
-  add('7. Uploads arrive', m.d.lastRun ? '✅' : '⚠', 'Last upload: ' + (m.d.lastRun || 'none recorded'), '—');
+  add('8. Uploads arrive', m.d.lastRun ? '✅' : '⚠', 'Last upload: ' + (m.d.lastRun || 'none recorded'), '—');
   m.checks = out;
   return out;
 }

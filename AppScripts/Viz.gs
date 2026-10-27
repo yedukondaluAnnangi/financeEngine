@@ -478,8 +478,10 @@ function vzAccountsTab(ss) {
   sh.getRange('F4').setFormula(by('COUNTIF(_Calc!C2:C,a)'));
   sh.getRange('G4').setFormula(by('SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!B2:B,' + m0 + ',_Calc!H2:H,">0")'));
   sh.getRange('H4').setFormula(by('-SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!B2:B,' + m0 + ',_Calc!H2:H,"<0")'));
-  sh.getRange('I4').setFormula(by('IFERROR(INDEX(SORT(FILTER({ARRAYFORMULA(TEXT(_Balances!D2:D,"yyyy-mm-dd")),_Balances!E2:E},_Balances!C2:C=a),1,FALSE),1,2),"—")'));
-  sh.getRange('J4').setFormula(by('IFERROR(INDEX(SORT(FILTER(ARRAYFORMULA(TEXT(_Balances!D2:D,"yyyy-mm-dd")),_Balances!C2:C=a),1,FALSE),1,1),"")'));
+  // Bank accounts: the Now tab's rolled-forward balance (the same number everywhere); cards: last statement.
+  var L = pgNowRows(pgAccounts().banks.length), NOW = "'" + PG.TAB_NOW + "'!$A$" + L.b0 + ':$C$' + L.bEnd;
+  sh.getRange('I4').setFormula(by('IFERROR(VLOOKUP(a,' + NOW + ',2,0),IFERROR(INDEX(SORT(FILTER({ARRAYFORMULA(TEXT(_Balances!D2:D,"yyyy-mm-dd")),_Balances!E2:E},_Balances!C2:C=a),1,FALSE),1,2),"—"))'));
+  sh.getRange('J4').setFormula(by('IFERROR(TEXT(VLOOKUP(a,' + NOW + ',3,0),"yyyy-mm-dd"),IFERROR(INDEX(SORT(FILTER(ARRAYFORMULA(TEXT(_Balances!D2:D,"yyyy-mm-dd")),_Balances!C2:C=a),1,FALSE),1,1),""))'));
   var spark = [];
   for (var r = 4; r < 4 + n; r++) {
     spark.push(['=IF(A' + r + '="","",IFERROR(SPARKLINE(MAKEARRAY(1,6,LAMBDA(i,j,-SUMIFS(_Calc!$H:$H,_Calc!$C:$C,A' + r +

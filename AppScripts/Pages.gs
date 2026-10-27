@@ -146,7 +146,9 @@ function pgNowTab(ss) {
     sh.getRange(r, 10).setFormula('=IF(I' + r + '="","",I' + r + '*' + rate + ')');
     var lead = b.cur === 'CAD' ? 1 : 3;     // money sent abroad takes a few days
     sh.getRange(r, 11).setFormula('=IF(B' + r + '="","✍ Type today\'s balance on the Assets & Debts tab",' +
-      'IF(I' + r + '>=0,"✅ Enough — ' + sym + '"&TEXT(I' + r + ',"#,##0")&" spare",' +
+      // The account with the most spare is the one asked to send to the short ones: count that.
+      'IF(I' + r + '>=0,LET(out,IF(J' + r + '=MAX($J$' + b0 + ':$J$' + bEnd + '),-SUMIF($J$' + b0 + ':$J$' + bEnd + ',"<0"),0)/' + rate + ',' +
+      '"✅ Enough — ' + sym + '"&TEXT(I' + r + '-out,"#,##0")&" spare"&IF(out>0," after sending ' + sym + '"&TEXT(out,"#,##0"),"")),' +
       'LET(best,IFERROR(INDEX(SORT(FILTER({$A$' + b0 + ':$A$' + bEnd + ',$J$' + b0 + ':$J$' + bEnd + '},ISNUMBER($J$' + b0 + ':$J$' + bEnd + '),$J$' + b0 + ':$J$' + bEnd + '>0),2,FALSE),1,1),"another account"),' +
       // The deadline follows the next payment still ahead; overdue ones are already late.
       'first,MINIFS(' + LB + ',' + LA + ',' + nm + ',' + LB + ',' + within + ',' + LB + ',">="&TODAY()),by,IF(first=0,TODAY(),MAX(TODAY(),first-' + lead + ')),' +

@@ -89,7 +89,7 @@ var CFG = {
   // missing here leaves Amount CAD blank and logs a note in _Issues.
   FX_TO_CAD : {
     CAD : 1,
-    INR : 0.0162
+    INR : 0.0148    // fallback only: the Categories tab uses Google Finance's live rate
   },
 
   // ---- Column order. Must match the Transactions header row. -------------

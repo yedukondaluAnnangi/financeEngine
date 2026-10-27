@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-27.1',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-27.2',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -74,7 +74,7 @@ var PLAN = {
   WASTE_GROUPS: ['Lifestyle', 'Personal subscriptions', 'Fees & charges'],
 
   MONTHS_SHOWN   : 4,     // columns in "Where your money goes" (current month included)
-  STALE_DAYS     : 14,    // an account this many days behind gets the upload banner
+  STALE_DAYS     : 7,     // an account this many days behind gets the upload banner (same on every tab)
   HABIT_MIN      : 5,    // purchases at one place in 30 days before it counts as a habit
   PRICE_UP       : 0.05,  // a bill paid 5% above or below its listed amount is flagged
   REVIEW_BY_DAY  : 7      // monthly review goes out on the first poll of days 1..7
@@ -245,7 +245,8 @@ function planReadTx(values, fx) {
     var amt = Number(r[6]);
     if (!date || isNaN(amt) || !amt) return;
     var cur = String(r[7] || 'CAD');
-    var cad = r[8] === '' || r[8] === null || isNaN(Number(r[8])) ? amt * (fx[cur] || 0) : Number(r[8]);
+    // Foreign money at today's rate (Categories tab), like _Calc; CAD as stored.
+    var cad = cur !== 'CAD' || r[8] === '' || r[8] === null || isNaN(Number(r[8])) ? amt * (fx[cur] || 0) : Number(r[8]);
     var cat = String(r[9] || '').trim();
     out.push({
       date: date, month: date.slice(0, 7), acct: String(r[3] || ''), desc: String(r[4] || ''),
@@ -667,7 +668,7 @@ function refreshDashboard(ss, quick) {
   }
   // The script still reads the data for two jobs a formula cannot do:
   // dating a new decision, and spotting a new recurring charge.
-  var M = planAnalyse(txVals, planCommitValues(commitSh), { today: today, fx: CFG.FX_TO_CAD });
+  var M = planAnalyse(txVals, planCommitValues(commitSh), { today: today, fx: fxRates(ss) });
   M.decidedFill.forEach(function (row) { commitSh.getRange(row, 10).setValue(today); });
   if (!quick && M.detected.length) {
     commitSh.getRange(commitSh.getLastRow() + 1, 1, M.detected.length, PLAN.COMMIT_COLS.length).setValues(M.detected);
