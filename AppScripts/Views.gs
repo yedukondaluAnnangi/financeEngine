@@ -324,7 +324,6 @@ function vwRender(ss, p) {
   sh.setHiddenGridlines(true);
 
   var all = sh.getRange(1, 1, rows.length, width);
-  all.setValues(rows).setFontFamily(TH.FONT).setVerticalAlignment('middle');
 
   // Formats as whole arrays: one call each instead of one per cell.
   var bg = [], fc = [], fw = [], fs = [], fst = [], nf = [];
@@ -348,7 +347,14 @@ function vwRender(ss, p) {
   p.numFmt.forEach(function (f) {
     for (var r = f.r0; r < Math.min(f.r1, rows.length); r++) for (var c = f.c0; c < Math.min(f.c1, width); c++) nf[r][c] = f.f;
   });
-  all.setBackgrounds(bg).setFontColors(fc).setFontWeights(fw).setFontSizes(fs).setFontStyles(fst).setNumberFormats(nf);
+  // Text marked with a leading ' (vwTxt / vwSafe) goes in as plain text: the format is set
+  // before the value, otherwise setValues reads "Nov 2026" or "Sat 31 Oct" as a date.
+  rows.forEach(function (r, i) {
+    r.forEach(function (v, j) { if (typeof v === 'string' && v.charAt(0) === "'") { r[j] = v.slice(1); nf[i][j] = '@'; } });
+  });
+  all.setNumberFormats(nf);
+  all.setValues(rows).setFontFamily(TH.FONT).setVerticalAlignment('middle');
+  all.setBackgrounds(bg).setFontColors(fc).setFontWeights(fw).setFontSizes(fs).setFontStyles(fst);
   sh.getRange(1, 1).setFontSize(17).setFontWeight('bold').setFontColor(VW.C.NAVY);
   sh.getRange(2, 1).setFontSize(9).setFontStyle('italic').setFontColor(VW.C.GREY);
   wrapRows.forEach(function (r) { sh.getRange(r + 1, 1, 1, width).setWrap(true); });
