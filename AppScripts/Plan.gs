@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-27.7',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-27.8',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -39,10 +39,10 @@ var PLAN = {
                 'Category', 'Decision', 'Decided on', 'Ends', 'Notes'],
   FREQUENCIES: ['Monthly', 'Weekly', 'Biweekly', 'Quarterly', 'Half-yearly', 'Yearly', 'One-off'],
   DECISIONS  : ['Keep', 'Cancel', 'Later', 'Review'],   // Later = parked: not due, not counted, not a saving
-  // Commitments AA / AB, right of the formula columns: how each payment moves, and Claude's advice.
+  // Commitments AC / AD, right of the formula columns M–AA (AA = paid last month — never write there): how each payment moves, and Claude's advice.
   // Auto-debit / Card / Direct deposit / Bank fee need no action (Home leaves them off the to-do list).
   HOW        : ['Auto-debit', 'Card', 'Direct deposit', 'Bank fee', 'e-Transfer', 'UPI / PhonePe', 'Remitly', 'Cash', 'Cheque', 'Mixed'],
-  HOW_COL    : 27,
+  HOW_COL    : 29,
 
   /**
    * Category -> group, first match wins. A group decides where a row counts:
@@ -942,10 +942,16 @@ function planHowColumns(sh) {
   sh.setColumnWidth(c + 1, 420);
   sh.getRange(1, c).setNote('How the money moves. Auto-debit, Card, Direct deposit and Bank fee take themselves — Home only ' +
     'checks the account has the money. e-Transfer, UPI, Remitly, Cash and Cheque are yours to do, so they are on Home\'s to-do list.');
-  [[13, 18], [21, 26]].forEach(function (g) {   // M–R, U–Z
-    if (sh.getColumnGroupDepth(g[0]) > 0) return;
-    sh.getRange(1, g[0], 1, g[1] - g[0] + 1).shiftColumnGroupDepth(1);
-    var grp = sh.getColumnGroup(g[0], 1);
+  // AA (paid last month) is a formula column: undo a dropdown / input colour an older build put there.
+  sh.getRange(2, FX.COMMIT_CALC_COL + FX.COMMIT_CALC.length - 1, rows, 1).clearDataValidations().setBackground(null);
+  [[13, 18], [21, FX.COMMIT_CALC_COL + FX.COMMIT_CALC.length - 1]].forEach(function (g) {   // M–R, U–AA
+    var added = false;
+    for (var col = g[0]; col <= g[1]; col++) {
+      if (sh.getColumnGroupDepth(col) > 0) continue;
+      sh.getRange(1, col).shiftColumnGroupDepth(1);   // joins the neighbouring group
+      added = true;
+    }
+    var grp = added ? sh.getColumnGroup(g[0], 1) : null;
     if (grp) grp.collapse();
   });
 }
