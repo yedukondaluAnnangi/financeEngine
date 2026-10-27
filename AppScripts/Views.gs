@@ -580,10 +580,20 @@ function vwEstimates(m) {
   m.ev.forEach(function (e) {
     if (!e.past || e.cad >= 0 || full.indexOf(e.date.slice(0, 7)) === -1) return;
     if (VW.NOT_SPENDING.indexOf(e.kind) !== -1 || recurring[e.catg]) return;
+    // The house is a project with its own budget (an open Commitments row), not a monthly pace.
+    if (e.kind === 'House construction' && vwOpenBudgets(m).some(function (o) { return o.kind === e.kind; })) return;
     est[m.country(e.acct)] += e.amt / full.length;
   });
   m.est = est;
   return est;
+}
+
+/** One-off Commitments parked as "Later" with an amount: budgets whose dates are not known yet. */
+function vwOpenBudgets(m) {
+  if (!m.open) m.open = m.cms.filter(function (c) {
+    return /^later$/i.test(c.decision) && /^one-off$/i.test(c.freq) && c.amount > 0 && m.groupOf(c.cat) === 'House construction';
+  }).map(function (c) { return { name: c.name, amount: c.amount, cur: c.cur, cad: c.cad, notes: c.notes, kind: 'House construction' }; });
+  return m.open;
 }
 
 function vwSummaryPage(m) {
@@ -792,6 +802,16 @@ function vwForecastPage(m) {
   var e0 = p.rows.length - 2;
   vwStyle(p, e0, e0 + 2, 0, W, { bg: VW.C.NAVY, color: VW.C.WHITE, bold: true });
   vwNumFmt(p, 4, p.rows.length, 1, W, VW_CAD);
+  // Money that is coming but has no dates yet (Decision "Later"): shown, not spread over months.
+  var open = vwOpenBudgets(m);
+  if (open.length) {
+    p.rows.push([]);
+    open.forEach(function (o) {
+      p.rows.push(['⏸ Not in the months above — no dates yet: ' + o.name + '  ' + (o.cur === 'INR' ? '₹' : '$') +
+        vwR(o.amount).toLocaleString('en-IN') + ' (≈ $' + vwR(o.cad).toLocaleString('en-US') + ')' + (o.notes ? ' · ' + o.notes : '')]);
+      vwStyle(p, p.rows.length - 1, p.rows.length, 0, W, { bg: VW.C.WARN, bold: true });
+    });
+  }
   m.lowest = low;
   p.widths = [360].concat(months.map(function () { return 84; }), [96]);
   return p;
