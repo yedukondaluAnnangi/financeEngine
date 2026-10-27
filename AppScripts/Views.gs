@@ -43,7 +43,7 @@ var VW = {
   MOVED: 'Moved between your accounts',
   TAB_ORDER: ['🏠 Today', '🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', 'Money map', 'Big picture',
               'Expected payments', 'Commitments', 'Transactions', 'Assets & Debts', 'Balance Sheet', 'Payees', 'Categories'],
-  OLD_TABS_2: ['🏠 Home', '🩺 Health', 'Now', 'Money map', 'Balance Sheet', 'Transactions', 'Payees', 'Categories'],
+  OLD_TABS_2: ['🏠 Home', '🩺 Health', 'Now', 'Money map', 'Balance Sheet', 'Categories'],   // Transactions + Payees stay, last
   OLD_TABS: ['Overview', 'Dashboard', 'Trends', 'Accounts', 'To label', 'Summary', 'Month Ahead', 'CarInsurance', 'Sheet4', '_Peek'],
   AUTO_PAY: /^(auto-debit|card|direct deposit|bank fee)/i,   // "How it's paid" values that need no action from you
   UNPLANNED_GROUPS: ['Lifestyle', 'Fees & charges'],
