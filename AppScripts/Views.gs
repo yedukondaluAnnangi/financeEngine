@@ -1109,7 +1109,8 @@ function vwTodayPage(m) {
 
   // ---- 2. How much do I have? (four tiles) -------------------------------------------
   var banks = m.nowInfo.banks.map(function (b) { return vwTodayAccount(m, b, soon); });
-  var cashCad = banks.reduce(function (s, a) { return s + (a.bal || 0) * rate(a.cur); }, 0);
+  // The Now tab's total, so every page shows the same cash to the dollar (rupees converted once).
+  var cashCad = m.nowInfo.cash !== null ? m.nowInfo.cash : banks.reduce(function (s, a) { return s + (a.bal || 0) * rate(a.cur); }, 0);
   var afterCad = banks.reduce(function (s, a) { return s + (a.after || 0) * rate(a.cur); }, 0);
   var owedCad = (m.d.cards || []).reduce(function (s, c) { return s + Math.max(0, c.owedCad); }, 0);
   var low = m.lowest && m.lowest.mo ? m.lowest : null;
