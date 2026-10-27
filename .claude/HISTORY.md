@@ -52,6 +52,8 @@ Home skips Auto-debit / Card / Direct deposit / Bank fee unless overdue; one tab
 `vwArrangeTabs`, old tabs hidden once (`vw_hidden_v1`). **Gotcha:** `setActiveSheet` on a
 hidden tab un-hides it — the old `vzArrange` would have undone any hiding.
 
+**Locks** (`c14be67`): `vwProtectAll` — warning-only protections (an owner can never be hard-locked), fact tabs whole-sheet with input columns left open (Home A, Habits G), input tabs only on formula/Claude columns; tab colours blue / yellow / grey. Card balances typed on Assets & Debts roll forward as owed (`5ec7b0a`, Dashboard B54). Proposed next: 4 read tabs (Today = Home+Now+Money map+Health, Money = Ledger+Summary, Future = Forecast+Big picture+Balance Sheet, Habits) + 3 input tabs.
+
 **Open:** user answers pending (second TD account, PhonePe = Kotak?, car-insurance match,
 lease, home insurance, decisions, loan balances, HST schedule, house budget, old tabs,
 Notion, Gmail balance reading needs a new OAuth scope → one manual re-authorisation).
