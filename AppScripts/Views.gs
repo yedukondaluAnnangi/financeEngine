@@ -31,7 +31,8 @@ var VW = {
   STALE_DAYS: 7,          // an account with no data for longer needs a statement
   MIN_GAP_MIN: 10,        // at most one edit-driven rebuild per this many minutes
   TIME_BUDGET_MS: 200000, // a poll stops writing pages after this, and the next poll carries on
-  RENDER_ORDER: ['today', 'finish', 'home', 'health', 'forecast', 'habits', 'summary', 'ledger'],
+  // 'finish' = locks + tab order: right after Today, and again at the end for the pages rebuilt since.
+  RENDER_ORDER: ['today', 'finish', 'home', 'health', 'forecast', 'habits', 'summary', 'ledger', 'finish'],
   PAIR_BEFORE: 2,         // a transfer may land this many days before it leaves (bank dating)…
   PAIR_AFTER: 7,          // …or this many after (Remitly, e-transfers)
   PAIR_SLACK: 0.08,       // amounts may differ this much (exchange rate, fees)
@@ -42,6 +43,7 @@ var VW = {
   MOVED: 'Moved between your accounts',
   TAB_ORDER: ['🏠 Today', '🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', 'Money map', 'Big picture',
               'Expected payments', 'Commitments', 'Transactions', 'Assets & Debts', 'Balance Sheet', 'Payees', 'Categories'],
+  OLD_TABS_2: ['🏠 Home', '🩺 Health', 'Now', 'Money map', 'Balance Sheet', 'Transactions', 'Payees', 'Categories'],
   OLD_TABS: ['Overview', 'Dashboard', 'Trends', 'Accounts', 'To label', 'Summary', 'Month Ahead', 'CarInsurance', 'Sheet4', '_Peek'],
   AUTO_PAY: /^(auto-debit|card|direct deposit|bank fee)/i,   // "How it's paid" values that need no action from you
   UNPLANNED_GROUPS: ['Lifestyle', 'Fees & charges'],
@@ -528,6 +530,7 @@ function vwRender(ss, p) {
     sh.collapseAllRowGroups();
   }
 
+  if (old && old.isSheetHidden()) sh.hideSheet();   // a page you hid stays hidden when it is rebuilt
   if (old) ss.deleteSheet(old);
   sh.setName(p.name);
   return sh;
@@ -1361,6 +1364,14 @@ function vwArrangeTabs(ss) {
       if (sh && !sh.isSheetHidden()) sh.hideSheet();
     });
     props.setProperty('vw_hidden_v1', new Date().toISOString());
+  }
+  // Second round (27 Oct): only the pages you use stay visible; these wait to be deleted once approved.
+  if (!props.getProperty('vw_hidden_v2')) {
+    VW.OLD_TABS_2.forEach(function (name) {
+      var sh = getTab(ss, name);
+      if (sh && !sh.isSheetHidden()) sh.hideSheet();
+    });
+    props.setProperty('vw_hidden_v2', new Date().toISOString());
   }
   // Reading order. Activating a hidden tab would show it again, so hidden ones are skipped.
   VW.TAB_ORDER.forEach(function (name, i) {
