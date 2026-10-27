@@ -557,5 +557,5 @@ function pgMapChart(ss) {
 function pgInstall(ss) {
   pgNowTab(ss);
   pgBigTab(ss);
-  pgMapTab(ss);
+  // The Money map was replaced by Today's account view (deleted 27 Oct 2026).
 }

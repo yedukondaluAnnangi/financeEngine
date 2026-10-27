@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-27.12',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-27.13',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -1020,7 +1020,7 @@ function planPagesOnce(props, stamp) {
   props.setProperty('pg_day', stamp);
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
   try {
-    if (props.getProperty('pg_version') !== PLAN.VERSION || !getTab(ss, PG.TAB_NOW) || !getTab(ss, PG.TAB_MAP) || !getTab(ss, EX.TAB)) {
+    if (props.getProperty('pg_version') !== PLAN.VERSION || !getTab(ss, PG.TAB_NOW) || !getTab(ss, EX.TAB)) {
       exInstall(ss);
       pgInstall(ss);
       vzArrange(ss);

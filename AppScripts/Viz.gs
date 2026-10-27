@@ -587,15 +587,10 @@ function vzArrange(ss) {
 
 /** Rebuild the three tabs (on a version change). */
 function vzInstall(ss) {
-  vzVizTab(ss);
-  vzOverviewTab(ss);
-  vzTrendsTab(ss);
-  vzAccountsTab(ss);
+  // Overview, Trends, Accounts, To label, _Peek and _Viz were replaced by the Views pages
+  // (Today, Ledger, Summary, Habits) and deleted on 27 Oct 2026; their builders stay unused.
   bsInstall(ss);
-  vzToLabelTab(ss);
-  vzPeekTab(ss);
   thPayees(ss);
   thCategories(ss);
-  vzOverviewLinks(ss);
   vzArrange(ss);
 }

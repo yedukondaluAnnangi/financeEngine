@@ -32,7 +32,7 @@ var VW = {
   MIN_GAP_MIN: 10,        // at most one edit-driven rebuild per this many minutes
   TIME_BUDGET_MS: 200000, // a poll stops writing pages after this, and the next poll carries on
   // 'finish' = locks + tab order: right after Today, and again at the end for the pages rebuilt since.
-  RENDER_ORDER: ['today', 'finish', 'home', 'health', 'forecast', 'habits', 'summary', 'ledger', 'finish'],
+  RENDER_ORDER: ['today', 'finish', 'forecast', 'habits', 'summary', 'ledger', 'finish'],   // Home + Health live inside Today
   PAIR_BEFORE: 2,         // a transfer may land this many days before it leaves (bank dating)…
   PAIR_AFTER: 7,          // …or this many after (Remitly, e-transfers)
   PAIR_SLACK: 0.08,       // amounts may differ this much (exchange rate, fees)

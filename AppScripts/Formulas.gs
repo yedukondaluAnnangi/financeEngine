@@ -540,7 +540,7 @@ function planInstallFormulas(ss, commitSh, cats) {
   var props = PropertiesService.getScriptProperties();
   var dash = getTab(ss, PLAN.TAB_DASH);
   var fresh = props.getProperty('fx_version') !== PLAN.VERSION || !dash || !dash.getRange('A3').getFormula() ||
-              !getTab(ss, FX.CALC) || !getTab(ss, VZ.TAB_OVERVIEW);
+              !getTab(ss, FX.CALC);
   if (fresh) {
     fxCalcTab(ss);
     fxDashboardTab(ss);
