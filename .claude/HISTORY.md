@@ -44,6 +44,14 @@ rule for the loan's PhonePe merchant id (amount-free), domain purchases → Busi
 **Gotcha:** the Bash tool strips `\` from heredoc JS even in quoted heredocs — write regexes
 without backslashes (`[0-9]`) in scripted sheet edits, or use the Edit tool.
 
+**Later still:** `bb0a053` an open house budget (one-off, Decision Later, house category) is
+listed under the Forecast and removes house spending from the day-to-day estimate.
+`0e87beb` Commitments AA "How it's paid" (dropdown, PLAN.HOW) + AB "Claude's suggestion",
+formula columns M–R / U–Z folded (`planHowColumns`, idempotent via getColumnGroupDepth);
+Home skips Auto-debit / Card / Direct deposit / Bank fee unless overdue; one tab order in
+`vwArrangeTabs`, old tabs hidden once (`vw_hidden_v1`). **Gotcha:** `setActiveSheet` on a
+hidden tab un-hides it — the old `vzArrange` would have undone any hiding.
+
 **Open:** user answers pending (second TD account, PhonePe = Kotak?, car-insurance match,
 lease, home insurance, decisions, loan balances, HST schedule, house budget, old tabs,
 Notion, Gmail balance reading needs a new OAuth scope → one manual re-authorisation).
