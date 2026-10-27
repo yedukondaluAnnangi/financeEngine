@@ -42,7 +42,7 @@ var VW = {
   HOURLY_LAG: 11,         // a Friday payday pays the Mon–Fri week that started this many days before
   MOVED: 'Moved between your accounts',
   TAB_ORDER: ['🏠 Today', '🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', 'Money map', 'Big picture',
-              'Expected payments', 'Commitments', 'Transactions', 'Assets & Debts', 'Balance Sheet', 'Payees', 'Categories'],
+              'Expected payments', 'Commitments', 'Assets & Debts', 'Balance Sheet', 'Categories', 'Transactions', 'Payees'],
   OLD_TABS_2: ['🏠 Home', '🩺 Health', 'Now', 'Money map', 'Balance Sheet', 'Categories'],   // Transactions + Payees stay, last
   OLD_TABS: ['Overview', 'Dashboard', 'Trends', 'Accounts', 'To label', 'Summary', 'Month Ahead', 'CarInsurance', 'Sheet4', '_Peek'],
   AUTO_PAY: /^(auto-debit|card|direct deposit|bank fee)/i,   // "How it's paid" values that need no action from you
