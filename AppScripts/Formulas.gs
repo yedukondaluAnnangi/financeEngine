@@ -544,6 +544,7 @@ function planInstallFormulas(ss, commitSh, cats) {
     props.setProperty('fx_version', PLAN.VERSION);
   }
   fxCommitFormulas(commitSh);
+  try { planHowColumns(commitSh); } catch (err) { planIssue('Commitments How / suggestion columns failed', err); }
   // Charts are re-drawn every refresh: their range follows the number of months on record.
   try { SpreadsheetApp.flush(); vzOverviewCharts(ss); bsCharts(ss); } catch (err) { planIssue('Overview / Balance Sheet charts failed', err); }
 }

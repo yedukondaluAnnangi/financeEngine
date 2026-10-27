@@ -578,18 +578,11 @@ function vzPeekTab(ss) {
 
 /** Tabs in the order you use them; filter row on Transactions. */
 function vzArrange(ss) {
-  [PG.TAB_NOW, PG.TAB_MAP, PG.TAB_BIG, EX.TAB, VZ.TAB_OVERVIEW, BS.TAB_VIEW, PLAN.TAB_DASH, PLAN.TAB_COMMIT, CFG.TAB_TX, VZ.TAB_TRENDS, VZ.TAB_ACCOUNTS,
-   BS.TAB_INPUT, VZ.TAB_LABEL, CFG.TAB_PAYEES, FX.CATS]
-    .forEach(function (name, i) {
-      var sh = getTab(ss, name);
-      if (!sh) return;
-      ss.setActiveSheet(sh);
-      ss.moveActiveSheet(i + 1);
-    });
+  // One tab order for the whole sheet lives in Views.gs; the old tabs stay hidden there.
+  vwArrangeTabs(ss);
   var tx = getTab(ss, CFG.TAB_TX);
   if (tx && !tx.getFilter() && tx.getLastRow() > 1) tx.getRange(1, 1, tx.getLastRow(), CFG.COLS.length).createFilter();
   if (tx) tx.setFrozenRows(1);
-  ss.setActiveSheet(getTab(ss, PG.TAB_NOW) || getTab(ss, VZ.TAB_OVERVIEW));
 }
 
 /** Rebuild the three tabs (on a version change). */

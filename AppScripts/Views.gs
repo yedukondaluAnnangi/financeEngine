@@ -38,6 +38,10 @@ var VW = {
   HOURLY_NOTE: /\b\d+(\.\d+)?\s*h\b/i,   // Commitments notes like "37.5 h × $…" = paid by the hour
   HOURLY_LAG: 11,         // a Friday payday pays the Mon–Fri week that started this many days before
   MOVED: 'Moved between your accounts',
+  TAB_ORDER: ['🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', 'Money map', 'Big picture',
+              'Expected payments', 'Commitments', 'Transactions', 'Assets & Debts', 'Balance Sheet', 'Payees', 'Categories'],
+  OLD_TABS: ['Overview', 'Dashboard', 'Trends', 'Accounts', 'To label', 'Summary', 'Month Ahead', 'CarInsurance', 'Sheet4', '_Peek'],
+  AUTO_PAY: /^(auto-debit|card|direct deposit|bank fee)/i,   // "How it's paid" values that need no action from you
   UNPLANNED_GROUPS: ['Lifestyle', 'Fees & charges'],
   UNPLANNED_CATS: ['Subscription - cancel'],
   PLANNED_GROUPS: ['Bills & loans', 'Essentials', 'Personal subscriptions', 'Business costs', 'House construction'],
@@ -340,7 +344,7 @@ function vwCm(m, c, r, when, status, tag) {
   var inc = String(r[22]) === 'In', sign = inc ? 1 : -1;
   var acct = m.fullAcct(c.acct) || '(no account set)';
   return { date: when, what: c.name, acct: acct, amt: sign * c.amount, cur: c.cur, cad: sign * c.cad, catg: c.cat || 'Not labelled yet',
-    kind: inc ? 'Income' : m.groupOf(c.cat), past: false, dir: inc ? 'In' : 'Out', status: status, tag: tag, cmName: c.name,
+    kind: inc ? 'Income' : m.groupOf(c.cat), past: false, dir: inc ? 'In' : 'Out', status: status, tag: tag, cmName: c.name, how: String(r[26] || '').trim(),
     source: 'Recurring · ' + (c.notes ? String(c.notes).slice(0, 90) : 'Commitments tab') };
 }
 
@@ -898,17 +902,18 @@ function vwHealthPage(m) {
 function vwTodo(m) {
   if (m.todo) return m.todo;
   var out = [], soon = pAddDays(m.today, VW.SOON_DAYS);
+  var byHow = function (e) { return e.how && !VW.AUTO_PAY.test(e.how) ? ' by ' + e.how : ''; };
   var money = function (e) { return (e.cur === 'INR' ? '₹' : '$') + Math.abs(vwR(e.amt)).toLocaleString('en-US'); };
   m.ev.filter(function (e) { return e.tag === 'overdue'; }).forEach(function (e) {
-    out.push({ key: 'cm|' + e.what + '|' + e.date, what: 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct), when: '🔴 overdue since ' + vwDay(e.date), cm: e.what });
+    out.push({ key: 'cm|' + e.what + '|' + e.date, what: 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + byHow(e), when: '🔴 overdue since ' + vwDay(e.date), cm: e.what });
   });
   m.moves.forEach(function (mv) {
     out.push({ key: 'mv|' + mv.to, what: 'Move about $' + vwR(mv.cad).toLocaleString('en-US') + ' ' + vwShort(mv.from) + ' → ' + vwShort(mv.to), when: mv.by ? 'by ' + vwDay(mv.by) : 'soon' });
   });
   // Bank fees and charges on a card take themselves; only what you pay by hand is listed.
   var cards = {}; m.d.accounts.forEach(function (a) { if (a.card) cards[a.name] = 1; });
-  m.ev.filter(function (e) { return e.tag === 'planned' && e.dir === 'Out' && e.date <= soon && !e.exKey && !cards[e.acct] && e.kind !== 'Fees & charges'; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (e) {
-    out.push({ key: 'cm|' + e.what + '|' + e.date, what: 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct), when: vwDay(e.date), cm: e.what });
+  m.ev.filter(function (e) { return e.tag === 'planned' && e.dir === 'Out' && e.date <= soon && !e.exKey && !cards[e.acct] && e.kind !== 'Fees & charges' && !VW.AUTO_PAY.test(e.how || ''); }).sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (e) {
+    out.push({ key: 'cm|' + e.what + '|' + e.date, what: 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + byHow(e), when: vwDay(e.date), cm: e.what });
   });
   m.ev.filter(function (e) { return e.exKey && e.tag === 'planned' && e.date <= soon; }).forEach(function (e) {
     out.push({ key: 'ex|' + e.exKey, what: 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + ' (you approved it)', when: vwDay(e.date) });
@@ -1023,9 +1028,20 @@ function vwProtectTransactions(ss) {
 
 /** The new pages first, in reading order. */
 function vwArrangeTabs(ss) {
-  [VW.HOME, VW.LEDGER, VW.SUMMARY, VW.HABITS, VW.FORECAST, VW.HEALTH].forEach(function (name, i) {
+  var props = PropertiesService.getScriptProperties();
+  // The tabs the new pages replace: hidden once (still working — the monthly email reads the
+  // Dashboard), to be deleted later. Unhide one by hand and it stays visible.
+  if (!props.getProperty('vw_hidden_v1')) {
+    VW.OLD_TABS.forEach(function (name) {
+      var sh = getTab(ss, name);
+      if (sh && !sh.isSheetHidden()) sh.hideSheet();
+    });
+    props.setProperty('vw_hidden_v1', new Date().toISOString());
+  }
+  // Reading order. Activating a hidden tab would show it again, so hidden ones are skipped.
+  VW.TAB_ORDER.forEach(function (name, i) {
     var sh = getTab(ss, name);
-    if (!sh) return;
+    if (!sh || sh.isSheetHidden()) return;
     ss.setActiveSheet(sh);
     ss.moveActiveSheet(i + 1);
   });

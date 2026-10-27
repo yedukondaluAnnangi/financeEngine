@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-27.4',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-27.5',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -39,6 +39,10 @@ var PLAN = {
                 'Category', 'Decision', 'Decided on', 'Ends', 'Notes'],
   FREQUENCIES: ['Monthly', 'Weekly', 'Biweekly', 'Quarterly', 'Half-yearly', 'Yearly', 'One-off'],
   DECISIONS  : ['Keep', 'Cancel', 'Later', 'Review'],   // Later = parked: not due, not counted, not a saving
+  // Commitments AA / AB, right of the formula columns: how each payment moves, and Claude's advice.
+  // Auto-debit / Card / Direct deposit / Bank fee need no action (Home leaves them off the to-do list).
+  HOW        : ['Auto-debit', 'Card', 'Direct deposit', 'Bank fee', 'e-Transfer', 'UPI / PhonePe', 'Remitly', 'Cash', 'Cheque', 'Mixed'],
+  HOW_COL    : 27,
 
   /**
    * Category -> group, first match wins. A group decides where a row counts:
@@ -921,6 +925,31 @@ function planCommitValues(sh) {
 }
 
 /** The Commitments tab, created and seeded on first use. */
+/**
+ * Commitments as the one place to decide: "How it's paid" (dropdown) and "Claude's suggestion"
+ * after the formula columns, with the formula columns M–R and U–Z folded away so Decision,
+ * Account, Next due, Status and How sit close together. Safe to run on every rebuild.
+ */
+function planHowColumns(sh) {
+  var c = PLAN.HOW_COL, rows = sh.getMaxRows() - 1;
+  if (sh.getMaxColumns() < c + 1) sh.insertColumnsAfter(sh.getMaxColumns(), c + 1 - sh.getMaxColumns());
+  sh.getRange(1, c, 1, 2).setValues([['How it\'s paid', 'Claude\'s suggestion']]);
+  thHeader(sh.getRange(1, c, 1, 2));
+  sh.getRange(2, c, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireValueInList(PLAN.HOW, true).setAllowInvalid(true).build()).setBackground(TH.INPUT);
+  sh.getRange(2, c + 1, rows, 1).setWrap(true).setFontColor(TH.GREY);
+  sh.setColumnWidth(c, 120);
+  sh.setColumnWidth(c + 1, 420);
+  sh.getRange(1, c).setNote('How the money moves. Auto-debit, Card, Direct deposit and Bank fee take themselves — Home only ' +
+    'checks the account has the money. e-Transfer, UPI, Remitly, Cash and Cheque are yours to do, so they are on Home\'s to-do list.');
+  [[13, 18], [21, 26]].forEach(function (g) {   // M–R, U–Z
+    if (sh.getColumnGroupDepth(g[0]) > 0) return;
+    sh.getRange(1, g[0], 1, g[1] - g[0] + 1).shiftColumnGroupDepth(1);
+    var grp = sh.getColumnGroup(g[0], 1);
+    if (grp) grp.collapse();
+  });
+}
+
 function planCommitmentsTab(ss) {
   var sh = getTab(ss, PLAN.TAB_COMMIT);
   if (sh) return sh;
