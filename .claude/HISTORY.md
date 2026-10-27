@@ -38,7 +38,9 @@ placed first — 🏠 Home, 📒 Ledger, 🗂 Summary, 🧠 Habits, 🔮 Forecas
 - Transactions gets a warning-only protection.
 
 **Gotchas:** a `Date` at UTC midnight written to a Toronto sheet shows the day before — use
-local noon. `setValues` turns "Sep 2026" into a date — prefix `'`. A regex char class
+local noon. `setValues` turns "Sep 2026" / "Sat 31 Oct" into a date, and
+a leading `'` does NOT stop it from Apps Script — set the cell's number format to `@`
+*before* `setValues` (`44d0439`). A regex char class
 `[=+\-@]` lost its backslash through heredoc + template literal and became the range `+-@`
 (digits included) — put `-` last. Recursion trap: Health ↔ Home to-do both needed the
 stale-account list → memoised `vwStale`. CRLF files: Node string splicing fails silently
