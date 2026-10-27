@@ -74,6 +74,9 @@ var CFG = {
                  login: 'https://easyweb.td.com/',
                  howTo: 'Business Chequing › Download › CSV. Keep "accountactivity.csv".',
                  holdsHst: true },
+    TD_INV   : { accepts: ['csv'], cadence: 'any-date',
+                 login: 'https://easyweb.td.com/',
+                 howTo: 'Business Investor account ••2366 › Download › CSV. Rename so the name ends in 2366.csv.' },
     HDFC_SAV : { accepts: ['xls', 'xlsx', 'csv', 'txt'], cadence: 'any-date',
                  login: 'https://netbanking.hdfcbank.com/netbanking/',
                  howTo: 'Savings ••7203 › Account Statement › choose XLS (not PDF — it is password-protected).' },
@@ -116,6 +119,10 @@ var CFG = {
    * the card's.
    */
   ACCOUNTS : [
+    // TD CSVs have no account number inside and both TD accounts download as
+    // accountactivity.csv: rename the investor account's file to end in 2366.csv.
+    // Above TD_BUS, whose rule matches any accountactivity file.
+    { file: /2366\.csv$/i,            key: 'TD_INV',    name: 'TD Business Investor ••2366', currency: 'CAD', rowParser: 'parseTdRows' },
     // TD CSV has no bank name inside, so it is matched by TD's default file name.
     { test: 'accountactivity',        key: 'TD_BUS',    name: 'TD Business Chequing',   currency: 'CAD', rowParser: 'parseTdRows' },
 
