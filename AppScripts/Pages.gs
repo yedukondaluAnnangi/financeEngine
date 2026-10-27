@@ -42,7 +42,8 @@ function pgAccounts() {
       var payer = CFG.ACCOUNTS.filter(function (x) { return x.key === b.payFrom; })[0];
       cards.push({ name: a.name, payFrom: payer ? payer.name : '' });
     } else {
-      banks.push({ name: a.name, cur: a.currency, hst: !!b.holdsHst });
+      var funder = CFG.ACCOUNTS.filter(function (x) { return x.key === b.fundedFrom; })[0];
+      banks.push({ name: a.name, cur: a.currency, hst: !!b.holdsHst, fundedFrom: funder ? funder.name : '' });
     }
   });
   return { banks: banks, cards: cards };
@@ -145,14 +146,26 @@ function pgNowTab(ss) {
     sh.getRange(r, 9).setFormula('=IF(B' + r + '="","",B' + r + '+E' + r + '-F' + r + '-G' + r + '-H' + r + ')');
     sh.getRange(r, 10).setFormula('=IF(I' + r + '="","",I' + r + '*' + rate + ')');
     var lead = b.cur === 'CAD' ? 1 : 3;     // money sent abroad takes a few days
+    // Money moves only along fundedFrom routes (TD → RBC → HDFC). L = CAD this account must
+    // receive: its own shortfall plus what it passes on to the accounts it funds, less its spare.
+    // M = when it must arrive: before its own first payment, and a day before a dependant's.
+    var deps = [];
+    banks.forEach(function (x, j) { if (x.fundedFrom === b.name) deps.push({ r: b0 + j, name: x.name }); });
+    var depNeed = deps.length ? '(' + deps.map(function (x) { return 'N(L' + x.r + ')'; }).join('+') + ')' : '0';
+    var depNames = deps.length
+      ? 'TEXTJOIN(", ",TRUE,' + deps.map(function (x) { return 'IF(N(L' + x.r + ')>0,"' + x.name + '","")'; }).join(',') + ')' : '""';
+    sh.getRange(r, 12).setFormula('=IF(J' + r + '="","",MAX(0,' + depNeed + '-J' + r + '))');
+    sh.getRange(r, 13).setFormula('=IF(N(L' + r + ')=0,"",LET(first,MINIFS(' + LB + ',' + LA + ',' + nm + ',' + LB + ',' + within + ',' + LB + ',">="&TODAY()),' +
+      'MAX(TODAY(),MIN(IF(first=0,2958465,first-' + lead + ')' +
+      deps.map(function (x) { return ',IF(N(L' + x.r + ')>0,M' + x.r + '-1,2958465)'; }).join('') + '))))');
+    sh.getRange(r, 12, 1, 2).setNumberFormats([['$#,##0', 'ddd d mmm']]);
     sh.getRange(r, 11).setFormula('=IF(B' + r + '="","✍ Type today\'s balance on the Assets & Debts tab",' +
-      // The account with the most spare is the one asked to send to the short ones: count that.
-      'IF(I' + r + '>=0,LET(out,IF(J' + r + '=MAX($J$' + b0 + ':$J$' + bEnd + '),-SUMIF($J$' + b0 + ':$J$' + bEnd + ',"<0"),0)/' + rate + ',' +
-      '"✅ Enough — ' + sym + '"&TEXT(I' + r + '-out,"#,##0")&" spare"&IF(out>0," after sending ' + sym + '"&TEXT(out,"#,##0"),"")),' +
-      'LET(best,IFERROR(INDEX(SORT(FILTER({$A$' + b0 + ':$A$' + bEnd + ',$J$' + b0 + ':$J$' + bEnd + '},ISNUMBER($J$' + b0 + ':$J$' + bEnd + '),$J$' + b0 + ':$J$' + bEnd + '>0),2,FALSE),1,1),"another account"),' +
-      // The deadline follows the next payment still ahead; overdue ones are already late.
-      'first,MINIFS(' + LB + ',' + LA + ',' + nm + ',' + LB + ',' + within + ',' + LB + ',">="&TODAY()),by,IF(first=0,TODAY(),MAX(TODAY(),first-' + lead + ')),' +
-      '"⚠ Short ' + sym + '"&TEXT(-I' + r + ',"#,##0")&" → move about "&TEXT(-J' + r + ',"$#,##0")&" from "&best&" by "&TEXT(by,"ddd d mmm"))))');
+      'IF(N(L' + r + ')=0,LET(out,' + depNeed + '/' + rate + ',' +
+      '"✅ Enough — ' + sym + '"&TEXT(I' + r + '-out,"#,##0")&" spare"&IF(out>0," after sending "&TEXT(' + depNeed + ',"$#,##0")&" to "&' + depNames + ',"")),' +
+      (b.fundedFrom
+        ? '"⚠ "&IF(I' + r + '<0,"Short ' + sym + '"&TEXT(-I' + r + ',"#,##0"),"")&IF(' + depNeed + '>0,IF(I' + r + '<0," + ","")&TEXT(' + depNeed + ',"$#,##0")&" to pass on to "&' + depNames + ',"")' +
+          '&" → move about "&TEXT(L' + r + ',"$#,##0")&" from ' + b.fundedFrom + ' by "&TEXT(M' + r + ',"ddd d mmm")))'
+        : '"⚠ Short "&TEXT(L' + r + ',"$#,##0")&" — no account is set to top this one up"))'));
     sh.getRange(r, 2).setNumberFormat(pgFmt(b.cur));
     sh.getRange(r, 5, 1, 5).setNumberFormat(pgFmt(b.cur));
   });
@@ -160,6 +173,9 @@ function pgNowTab(ss) {
   sh.getRange(b0, 4, banks.length + 1, 1).setNumberFormat('$#,##0');
   sh.getRange(b0, 10, banks.length + 1, 1).setNumberFormat('$#,##0;[Red]-$#,##0').setFontWeight('bold');
   sh.getRange(b0, 11, banks.length, 1).setWrap(true);
+  // L / M: the transfer helpers behind "What to do" (read by the Money map and Today).
+  sh.getRange(m0 + 1, 12, 1, 2).setValues([['Move in (CAD)', 'Move by']]);
+  sh.hideColumns(12, 2);
   thBand(sh.getRange(b0, 1, banks.length, W), false);
   sh.getRange(bTot, 1).setValue('Total');
   sh.getRange(bTot, 4).setFormula('=SUM(D' + b0 + ':D' + bEnd + ')');
@@ -442,16 +458,16 @@ function pgMapTab(ss) {
     // ARRAYFORMULA: "− "&INDEX(q,,1) on its own would keep only the first line.
     sh.getRange(i0, c).setFormula('=IFERROR(ARRAY_CONSTRAIN(ARRAYFORMULA(LET(' +
       'inc,IF(' + N + 'E' + r + '>0,HSTACK("+ Coming in",' + N + 'E' + r + '),' + blank + '),' +
-      'mvin,IF(LEFT(' + nowK + ',1)="⚠",HSTACK("⬅ Move in "&REGEXEXTRACT(' + nowK + ',"(from .*)"),-' + N + 'I' + r + '),' + blank + '),' +
+      'mvin,IF(LEFT(' + nowK + ',1)="⚠",HSTACK("⬅ Move in "&REGEXEXTRACT(' + nowK + ',"(from .*)"),N(' + N + 'L' + r + ')/' + rate + '),' + blank + '),' +
       'q,QUERY({' + rng('A', R.l0, R.lEnd) + ',' + rng('I', R.l0, R.lEnd) + ',' + rng('D', R.l0, R.lEnd) + ',' + rng('B', R.l0, R.lEnd) + '},' +
         '"select Col2, sum(Col3) where Col1 = \'' + nm + '\' and Col4 <= date \'"&TEXT(TODAY()+' + PG.MOVE_DAYS + ',"yyyy-mm-dd")&"\' ' +
         'group by Col2 order by sum(Col3) desc label sum(Col3) \'\'",0),' +
       'pay,IFERROR(HSTACK("− "&INDEX(q,,1),-INDEX(q,,2)),' + blank + '),' +
       'crd,IF(' + N + 'G' + r + '>0,HSTACK("− Card bills",-' + N + 'G' + r + '),' + blank + '),' +
       'hst,IF(' + N + 'H' + r + '>0,HSTACK("− HST to keep for CRA",-' + N + 'H' + r + '),' + blank + '),' +
-      'k,IFERROR(FILTER({' + rng('A', R.b0, R.bEnd) + ',' + rng('J', R.b0, R.bEnd) + '},LEFT(' + rng('K', R.b0, R.bEnd) + ',1)="⚠",' +
+      'k,IFERROR(FILTER({' + rng('A', R.b0, R.bEnd) + ',' + rng('L', R.b0, R.bEnd) + '},LEFT(' + rng('K', R.b0, R.bEnd) + ',1)="⚠",' +
         'ISNUMBER(SEARCH("from ' + nm + '",' + rng('K', R.b0, R.bEnd) + '))),NA()),' +
-      'mvout,IFERROR(HSTACK("➡ Send to "&INDEX(k,,1),INDEX(k,,2)/' + rate + '),' + blank + '),' +
+      'mvout,IFERROR(HSTACK("➡ Send to "&INDEX(k,,1),-INDEX(k,,2)/' + rate + '),' + blank + '),' +
       'all,VSTACK(inc,mvin,pay,crd,hst,mvout),FILTER(all,INDEX(all,,1)<>""))),' + PG_MAP_ITEMS + ',2),"")');
     A.setNumberFormat(fmtOf(b.cur)).setHorizontalAlignment('right');
     L.setWrap(true);

@@ -953,7 +953,9 @@ function vwTodo(m) {
     out.push({ key: 'cm|' + e.what + '|' + e.date, what: 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + byHow(e), when: '🔴 overdue since ' + vwDay(e.date), cm: e.what });
   });
   m.moves.forEach(function (mv) {
-    out.push({ key: 'mv|' + mv.to, what: 'Move about $' + vwR(mv.cad).toLocaleString('en-US') + ' ' + vwShort(mv.from) + ' → ' + vwShort(mv.to), when: mv.by ? 'by ' + vwDay(mv.by) : 'soon' });
+    var abroad = m.curOf(mv.to) !== m.curOf(mv.from);
+    out.push({ key: 'mv|' + mv.to, what: 'Move about $' + vwR(mv.cad).toLocaleString('en-US') + ' ' + vwShort(mv.from) + ' → ' + vwShort(mv.to) +
+      (abroad ? ' by Remitly (it takes a few days)' : ' by e-Transfer'), when: mv.by ? 'by ' + vwDay(mv.by) : 'soon' });
   });
   // Bank fees and charges on a card take themselves; only what you pay by hand is listed.
   var cards = {}; m.d.accounts.forEach(function (a) { if (a.card) cards[a.name] = 1; });

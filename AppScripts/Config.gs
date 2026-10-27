@@ -48,6 +48,9 @@ var CFG = {
    *   payFrom   (cards) the account whose money pays this card off — the Now tab
    *             counts the card's bill against that account
    *   holdsHst  the account the HST you collect lands in; the Now tab keeps it aside there
+   *   fundedFrom (banks) the account that tops this one up when it runs short. Money only
+   *             moves along these routes (TD → RBC → HDFC); an account asks its funder for
+   *             its own shortfall plus whatever it must pass on to the accounts it funds.
    * Login links are the banks' public sign-in pages. Edit freely.
    */
   BANKS : {
@@ -57,10 +60,12 @@ var CFG = {
                  payFrom: 'RBC_CHQ' },
     RBC_CHQ  : { accepts: ['csv', 'pdf'], cadence: 'any-date',
                  login: 'https://secure.royalbank.com/statics/login-service-ui/index#/full/signin?LANGUAGE=ENGLISH',
-                 howTo: 'Chequing ••1324 › Download transactions › CSV. Keep "download-transactions.csv".' },
+                 howTo: 'Chequing ••1324 › Download transactions › CSV. Keep "download-transactions.csv".',
+                 fundedFrom: 'TD_BUS' },
     CIBC_CHQ : { accepts: ['csv'], cadence: 'any-date',
                  login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
-                 howTo: 'Chequing 73-83096 › Download transactions › CSV. Rename so the name ends in 096.csv.' },
+                 howTo: 'Chequing 73-83096 › Download transactions › CSV. Rename so the name ends in 096.csv.',
+                 fundedFrom: 'RBC_CHQ' },
     CIBC_680 : { accepts: ['csv'], cadence: 'any-date',
                  login: 'https://www.cibconline.cibc.com/ebm-resources/online-banking/client/index.html#/auth/signon',
                  howTo: 'Account ••680 › Download transactions › CSV. Rename so the name ends in 680.csv.',
@@ -79,7 +84,8 @@ var CFG = {
                  howTo: 'Business Investor account ••2366 › Download › CSV. Rename so the name ends in 2366.csv.' },
     HDFC_SAV : { accepts: ['xls', 'xlsx', 'csv', 'txt'], cadence: 'any-date',
                  login: 'https://netbanking.hdfcbank.com/netbanking/',
-                 howTo: 'Savings ••7203 › Account Statement › choose XLS (not PDF — it is password-protected).' },
+                 howTo: 'Savings ••7203 › Account Statement › choose XLS (not PDF — it is password-protected).',
+                 fundedFrom: 'RBC_CHQ' },
     HDFC_CARD: { accepts: ['pdf', 'xls', 'xlsx'], cadence: 'statement',
                  login: 'https://netbanking.hdfcbank.com/netbanking/',
                  howTo: 'Cards › Regalia ••4351 › Billed statement › XLS (or PDF).',
