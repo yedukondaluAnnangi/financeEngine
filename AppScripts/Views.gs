@@ -107,6 +107,7 @@ function vwRefresh() {
     .forEach(function (p) { vwRender(ss, p); });
   vwSaveState(m);
   vwProtectTransactions(ss);
+  try { vwProtectAll(ss); } catch (err) { planIssue('Locking the fact tabs failed', err); }
   vwArrangeTabs(ss);
   SpreadsheetApp.flush();
   PropertiesService.getScriptProperties().setProperty('vw_built_at', String(Date.now()));
@@ -1024,6 +1025,54 @@ function vwProtectTransactions(ss) {
   var sh = getTab(ss, CFG.TAB_TX);
   if (!sh || sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) return;
   sh.protect().setDescription('Raw bank data — only the upload (and labelling) process writes here').setWarningOnly(true);
+}
+
+/**
+ * Facts are locked, inputs are open. The owner of a sheet can never be fully locked out, so
+ * "locked" = Sheets stops and warns before an edit (warning-only protection); the script is
+ * not affected. Tab colours say which is which: blue = read only, yellow = yours to fill in.
+ * Idempotent: a tab or range that already carries our lock is left alone (a rebuilt page is a
+ * new tab, so it gets a fresh lock).
+ */
+var VW_LOCK = '🔒 Finance Engine — facts, worked out by the sheet';
+var VW_FACT_TABS = {            // whole tab locked, except these columns (yours on a fact page)
+  '🏠 Home': ['A'], '📒 Ledger': [], '🗂 Summary': [], '🧠 Habits': ['G'], '🔮 Forecast': [], '🩺 Health': [],
+  'Now': [], 'Money map': [], 'Big picture': [], 'Balance Sheet': [],
+  'Dashboard': [], 'Overview': [], 'Trends': [], 'Accounts': [], 'To label': []
+};
+var VW_INPUT_TABS = {           // your tabs: only the formula / Claude columns are locked
+  'Commitments': ['M2:Z', 'AB2:AB'], 'Expected payments': ['M2:N'], 'Assets & Debts': ['H2:H'],
+  'Categories': ['E2:F4'], 'Payees': []   // E8:F8 (HST rate) stays yours
+};
+var VW_TAB_COLOUR = { fact: '#1a73e8', input: '#f9ab00', raw: '#9aa0a6' };
+
+function vwProtectAll(ss) {
+  var mine = function (p) { return p.getDescription() === VW_LOCK; };
+  Object.keys(VW_FACT_TABS).forEach(function (name) {
+    var sh = getTab(ss, name);
+    if (!sh) return;
+    if (!sh.isSheetHidden()) sh.setTabColor(VW_TAB_COLOUR.fact);
+    if (sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).some(mine)) return;
+    var p = sh.protect().setDescription(VW_LOCK).setWarningOnly(true);
+    var open = VW_FACT_TABS[name].map(function (col) { return sh.getRange(col + ':' + col); });
+    if (open.length) p.setUnprotectedRanges(open);
+  });
+  Object.keys(VW_INPUT_TABS).forEach(function (name) {
+    var sh = getTab(ss, name);
+    if (!sh) return;
+    sh.setTabColor(VW_TAB_COLOUR.input);
+    // Compared by columns: the row count grows, so the A1 text of the same lock changes.
+    var key = function (rg) { return rg.getColumn() + ':' + rg.getLastColumn() + ':' + rg.getRow(); };
+    var have = sh.getProtections(SpreadsheetApp.ProtectionType.RANGE).filter(mine)
+      .map(function (p) { return key(p.getRange()); });
+    VW_INPUT_TABS[name].forEach(function (a1) {
+      var rg = sh.getRange(a1);
+      if (have.indexOf(key(rg)) !== -1) return;
+      rg.protect().setDescription(VW_LOCK).setWarningOnly(true);
+    });
+  });
+  var tx = getTab(ss, CFG.TAB_TX);
+  if (tx) tx.setTabColor(VW_TAB_COLOUR.raw);
 }
 
 /** The new pages first, in reading order. */
