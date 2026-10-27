@@ -34,6 +34,16 @@ for one-time facts; make it automatic from now on; can balances be fetched autom
 **Gotchas:** a heredoc-fed JS template turned `\b` into a literal backspace character in a
 regex — scan `.gs` files for control characters after scripted edits.
 
+**Then (answers from the user, mail and WhatsApp):** `88fc67f` Config TD_INV (business
+investor account, file rule `/2366\.csv$/` above TD_BUS — both TD downloads share a name).
+Sheet data only: loan EMI amounts/match corrected, a bounced EMI and a bounced lease debit
+marked "Reversal pair" so the bounce shows as unpaid, lease added (Biweekly, first date sets
+the cycle), the car-insurance row merged into the monthly family-support row (one transfer
+covers both — two rows matched the same payment), Expected rows rejected / updated, Payees
+rule for the loan's PhonePe merchant id (amount-free), domain purchases → Business - software.
+**Gotcha:** the Bash tool strips `\` from heredoc JS even in quoted heredocs — write regexes
+without backslashes (`[0-9]`) in scripted sheet edits, or use the Edit tool.
+
 **Open:** user answers pending (second TD account, PhonePe = Kotak?, car-insurance match,
 lease, home insurance, decisions, loan balances, HST schedule, house budget, old tabs,
 Notion, Gmail balance reading needs a new OAuth scope → one manual re-authorisation).
