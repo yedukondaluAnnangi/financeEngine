@@ -30,6 +30,8 @@ var VW = {
   VERIFIED_KEEP_DAYS: 7,  // a ✅ Verified line stays on Home this long
   STALE_DAYS: 7,          // an account with no data for longer needs a statement
   MIN_GAP_MIN: 10,        // at most one edit-driven rebuild per this many minutes
+  TIME_BUDGET_MS: 200000, // a poll stops writing pages after this, and the next poll carries on
+  RENDER_ORDER: ['today', 'finish', 'home', 'health', 'forecast', 'habits', 'summary', 'ledger'],
   PAIR_BEFORE: 2,         // a transfer may land this many days before it leaves (bank dating)…
   PAIR_AFTER: 7,          // …or this many after (Remitly, e-transfers)
   PAIR_SLACK: 0.08,       // amounts may differ this much (exchange rate, fees)
@@ -87,30 +89,60 @@ function vwMaybeRefresh() {
     if (Date.now() - builtAt < VW.MIN_GAP_MIN * 60000) return false;
     due = DriveApp.getFileById(CFG.SHEET_ID).getLastUpdated().getTime() > builtAt;
   }
+  // A rebuild that ran out of time left the rest in vw_pending: carry on with it first.
+  if (props.getProperty('vw_pending')) due = true;
   if (!due) return false;
+  var done = false;
   try {
-    vwRefresh();
+    done = vwRefresh();
   } catch (err) {
-    planIssue('Home / Ledger / Summary pages failed', err);
+    props.deleteProperty('vw_pending');
+    planIssue('Today / Ledger / Summary pages failed', err);
+    done = true;
   }
   props.setProperty('vw_stamp', stamp);
-  props.setProperty('vw_built_at', String(Date.now()));
+  if (done) props.setProperty('vw_built_at', String(Date.now()));
   return true;
 }
 
 /** Menu: Finance › Refresh Home, Ledger and the other pages. */
+/**
+ * Rebuild the pages, most important first. Writing all of them plus the locks can pass Apps
+ * Script's 6-minute limit (a timeout logs nothing and stops mid-way), so after TIME_BUDGET_MS
+ * the rest is left in vw_pending for the next poll. Returns true when everything is done.
+ */
 function vwRefresh() {
+  var props = PropertiesService.getScriptProperties(), start = Date.now();
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
   var d = vwRead(ss);
   var m = vwModel(d);
-  [vwLedgerPage(m), vwSummaryPage(m), vwHabitsPage(m), vwForecastPage(m), vwHealthPage(m), vwHomePage(m), vwTodayPage(m)]
-    .forEach(function (p) { vwRender(ss, p); });
+  // Every page is worked out (cheap — some read numbers from others), then written in order.
+  var built = {
+    ledger: vwLedgerPage(m), summary: vwSummaryPage(m), habits: vwHabitsPage(m), forecast: vwForecastPage(m),
+    health: vwHealthPage(m), home: vwHomePage(m), today: vwTodayPage(m)
+  };
+  var pending = JSON.parse(props.getProperty('vw_pending') || 'null') || VW.RENDER_ORDER.slice();
+  while (pending.length) {
+    if (Date.now() - start > VW.TIME_BUDGET_MS) {
+      props.setProperty('vw_pending', JSON.stringify(pending));
+      vwSaveState(m);
+      return false;
+    }
+    var step = pending.shift();
+    if (step === 'finish') {
+      vwProtectTransactions(ss);
+      try { vwProtectAll(ss); } catch (err) { planIssue('Locking the fact tabs failed', err); }
+      vwArrangeTabs(ss);
+    } else {
+      vwRender(ss, built[step]);
+    }
+    props.setProperty('vw_pending', JSON.stringify(pending));
+  }
+  props.deleteProperty('vw_pending');
   vwSaveState(m);
-  vwProtectTransactions(ss);
-  try { vwProtectAll(ss); } catch (err) { planIssue('Locking the fact tabs failed', err); }
-  vwArrangeTabs(ss);
   SpreadsheetApp.flush();
-  PropertiesService.getScriptProperties().setProperty('vw_built_at', String(Date.now()));
+  props.setProperty('vw_built_at', String(Date.now()));
+  return true;
 }
 
 
@@ -708,6 +740,7 @@ function vwHabitsPage(m) {
     cats.sort(function (a, b) { return tot(b) - tot(a); }).forEach(function (cg) {
       var L = spend.filter(function (e) { return e.catg === cg; });
       var mv = months.map(function (mo) { return vwR(-L.filter(function (e) { return e.date.slice(0, 7) === mo; }).reduce(function (s, e) { return s + e.cad; }, 0)); });
+      if (test === unplanned) m.unplannedYear = (m.unplannedYear || 0) + (mv[0] + mv[1]) / 2 * 12;
       var row = p.rows.length + 1;   // sheet row
       var lim = limits[cg] !== undefined ? limits[cg] : (test === unplanned && VW.LIMITS[cg] !== undefined ? VW.LIMITS[cg] : '');
       p.rows.push(['   ' + cg + '  (' + L.length + ' times)'].concat(mv, ['=AVERAGE(B' + row + ':C' + row + ')', '=E' + row + '*12', lim,
@@ -990,7 +1023,7 @@ function vwHomePage(m) {
   var low = m.lowest && m.lowest.mo ? '$' + vwR(m.lowest.v).toLocaleString('en-US') + ' in ' + pMonthName(m.lowest.mo) : '—';
   p.rows.push(['Cash today', 'Spare after the next 14 days', 'Health', 'Lowest cash (12 months)', 'Net worth', 'Unplanned spending / year']);
   p.rows.push([m.nowInfo.cash, m.nowInfo.spare, bad ? '⚠ ' + bad + ' check(s) need you' : '✅ All good', low, m.nowInfo.worth,
-    m.unplannedYearRow ? "='" + VW.HABITS + "'!F" + m.unplannedYearRow : '']);
+    vwR(m.unplannedYear || 0)]);
   vwStyle(p, 3, 4, 0, 6, { color: VW.C.GREY, bg: VW.C.SUB });
   vwStyle(p, 4, 5, 0, 6, { size: 16, bold: true, color: VW.C.NAVY, bg: VW.C.SUB, wrap: true });
   vwNumFmt(p, 4, 5, 0, 2, VW_CAD); vwNumFmt(p, 4, 5, 4, 6, VW_CAD);
