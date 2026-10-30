@@ -24,19 +24,23 @@ var BS = {
   TAB_INPUT: 'Assets & Debts',
   TAB_VIEW: 'Balance Sheet',
   TAB_LOG: '_NetWorth',
-  COLS: ['Name', 'Asset or Debt', 'Class', 'Currency', 'Amount', 'As of', 'Notes'],
+  COLS: ['Name', 'Asset or Debt', 'Class', 'Currency', 'Current value', 'Amount invested', 'As of', 'Notes'],
+  // Column letters of the Assets & Debts tab (I = CAD, a formula). Amount invested is filled in by
+  // the script for Wealthsimple, gold and the house (from your transactions); type it for the rest.
+  C: { value: 'E', invested: 'F', asof: 'G', notes: 'H', cad: 'I' },
   ASSET_CLASSES: ['Cash & bank', 'Investments', 'Retirement', 'Property', 'Vehicle', 'Money owed to you', 'Other asset'],
   DEBT_CLASSES: ['Home loan', 'Personal loan', 'Credit card', 'Tax owed', 'Money you owe', 'Other debt'],
   ROWS: 28,                 // room in each list on the Balance Sheet
+  HOUSE: 'House + land (India)',
   SEED: [
-    ['Wealthsimple', 'Asset', 'Investments', 'CAD', '', '', 'Total value from the Wealthsimple app (tracked in Notion › Finance › Investments).'],
-    ['RBC Chequing ••1324', 'Asset', 'Cash & bank', 'CAD', '', '', 'Its CSV has no balance — type today\'s balance from the RBC app.'],
-    ['CIBC Chequing 73-83096', 'Asset', 'Cash & bank', 'CAD', '', '', 'Its CSV has no balance — type today\'s balance from the CIBC app.'],
-    ['Cash in hand', 'Asset', 'Cash & bank', 'CAD', '', '', 'Optional.'],
-    ['Car', 'Asset', 'Vehicle', 'CAD', '', '', 'Optional: what it would sell for today.'],
-    ['Gold / jewellery', 'Asset', 'Other asset', 'INR', '', '', 'Optional: today\'s value.'],
-    ['HDFC home loan — balance owed', 'Debt', 'Home loan', 'INR', '', '', 'Outstanding principal from the HDFC loan statement (not EMIs × months).'],
-    ['Kotak Mahindra loan — balance owed', 'Debt', 'Personal loan', 'INR', '', '', 'Outstanding principal from the Kotak loan statement.']
+    ['Wealthsimple', 'Asset', 'Investments', 'CAD', '', '', '', 'Total value from the Wealthsimple app.'],
+    ['RBC Chequing ••1324', 'Asset', 'Cash & bank', 'CAD', '', '', '', 'Its CSV has no balance — type today\'s balance from the RBC app.'],
+    ['CIBC Chequing 73-83096', 'Asset', 'Cash & bank', 'CAD', '', '', '', 'Its CSV has no balance — type today\'s balance from the CIBC app.'],
+    ['Cash in hand', 'Asset', 'Cash & bank', 'CAD', '', '', '', 'Optional.'],
+    ['Car', 'Asset', 'Vehicle', 'CAD', '', '', '', 'Optional: what it would sell for today.'],
+    ['Gold / jewellery', 'Asset', 'Other asset', 'INR', '', '', '', 'Optional: today\'s value.'],
+    ['HDFC home loan — balance owed', 'Debt', 'Home loan', 'INR', '', '', '', 'Outstanding principal from the HDFC loan statement (not EMIs × months).'],
+    ['Kotak Mahindra loan — balance owed', 'Debt', 'Personal loan', 'INR', '', '', '', 'Outstanding principal from the Kotak loan statement.']
   ]
 };
 
@@ -53,38 +57,41 @@ function bsInputTab(ss) {
     sh.getRange(2, 1, BS.SEED.length, BS.COLS.length).setValues(BS.SEED);
   }
   var rows = sh.getMaxRows() - 1;
-  sh.getRange('H1').setFormula('={"CAD";ARRAYFORMULA(IF(E2:E="","",E2:E*' + BS_RATE('D2:D') + '))}');
+  sh.getRange('I1').setFormula('={"CAD";ARRAYFORMULA(IF(E2:E="","",E2:E*' + BS_RATE('D2:D') + '))}');
   var list = function (vals) { return SpreadsheetApp.newDataValidation().requireValueInList(vals, true).setAllowInvalid(true).build(); };
   sh.getRange(2, 2, rows, 1).setDataValidation(list(['Asset', 'Debt']));
   sh.getRange(2, 3, rows, 1).setDataValidation(list(BS.ASSET_CLASSES.concat(BS.DEBT_CLASSES)));
   sh.getRange(2, 4, rows, 1).setDataValidation(list(Object.keys(CFG.FX_TO_CAD)));
-  sh.getRange(2, 6, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build());
-  sh.getRange(2, 5, rows, 1).setNumberFormat('#,##0.00');
-  sh.getRange(2, 6, rows, 1).setNumberFormat('yyyy-mm-dd');
-  sh.getRange(2, 8, rows, 1).setNumberFormat('$#,##0.00');
+  sh.getRange(2, 7, rows, 1).setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build());
+  sh.getRange(2, 5, rows, 2).setNumberFormat('#,##0.00');
+  sh.getRange(2, 7, rows, 1).setNumberFormat('yyyy-mm-dd');
+  sh.getRange(2, 9, rows, 1).setNumberFormat('$#,##0.00');
 
   thClearBands(sh);
-  sh.getRange(1, 1, rows + 1, 8).setFontFamily(TH.FONT).setVerticalAlignment('middle');
-  thBand(sh.getRange(1, 1, rows + 1, 8), true);
-  thHeader(sh.getRange(1, 1, 1, 7));
-  thHeader(sh.getRange(1, 8), TH.CALC_HEAD);
+  sh.getRange(1, 1, rows + 1, 9).setFontFamily(TH.FONT).setVerticalAlignment('middle');
+  thBand(sh.getRange(1, 1, rows + 1, 9), true);
+  thHeader(sh.getRange(1, 1, 1, 8));
+  thHeader(sh.getRange(1, 9), TH.CALC_HEAD);
   sh.setRowHeight(1, 32);
   sh.getRange(2, 1, rows, 1).setFontWeight('bold');
-  sh.getRange(2, 7, rows, 1).setFontColor(TH.GREY);
-  sh.getRange(2, 8, rows, 1).setFontColor(TH.CALC_INK);
+  sh.getRange(2, 8, rows, 1).setFontColor(TH.GREY);
+  sh.getRange(2, 9, rows, 1).setFontColor(TH.CALC_INK);
   sh.setConditionalFormatRules([
     // An amount still to fill in.
     SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied('=AND($A2<>"",$E2="")')
-      .setRanges([sh.getRange(2, 5, rows, 2)]).setBackground(TH.INPUT).build(),
+      .setRanges([sh.getRange(2, 5, rows, 1), sh.getRange(2, 7, rows, 1)]).setBackground(TH.INPUT).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Debt').setRanges([sh.getRange(2, 2, rows, 1)])
       .setFontColor(TH.BAD).setBold(true).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Asset').setRanges([sh.getRange(2, 2, rows, 1)])
       .setFontColor(TH.GOOD).setBold(true).build()
   ]);
-  [270, 110, 130, 80, 120, 100, 420, 120].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  [270, 110, 130, 80, 120, 120, 100, 420, 120].forEach(function (w, i) { sh.setColumnWidth(i + 1, w); });
+  sh.getRange('E1').setNote('What it is worth today, in its own currency. For a loan or card: what you owe.');
+  sh.getRange('F1').setNote('What you put in (your cost). Filled in automatically from your transactions for Wealthsimple, ' +
+    'gold / jewellery and the house; type it for anything else. Current value − amount invested = your gain or loss.');
   sh.setFrozenRows(1);
   sh.getRange('A1').setNote('Yours to edit. One row per thing you own or owe that no bank statement shows.\n\n' +
-    'Amount in the item\'s own currency, always positive (a debt is entered as what you owe).\n' +
+    'Current value in the item\'s own currency, always positive (a debt is entered as what you owe).\n' +
     'As of: when you checked it — the Balance Sheet flags anything older than 60 days.\n' +
     'A row named like an automatic one (e.g. "TD Business Chequing") replaces the automatic figure.\n' +
     'Leave Amount blank and the row is simply left out.');
@@ -113,7 +120,7 @@ function bsViewTab(ss) {
   var d0 = aTot + 4, dEnd = d0 + N - 1, dTot = dEnd + 1;
   var mine = function (kind) {   // your rows of one kind, with an amount
     return 'IFERROR(FILTER({' + IN + 'A2:A,' + IN + 'C2:C,ARRAYFORMULA(IF(' + IN + 'A2:A<>"","You entered","")),' +
-           'ARRAYFORMULA(IF(' + IN + 'F2:F="","",TEXT(' + IN + 'F2:F,"yyyy-mm-dd"))),' + IN + 'E2:E,' + IN + 'D2:D,' + IN + 'H2:H},' +
+           'ARRAYFORMULA(IF(' + IN + 'G2:G="","",TEXT(' + IN + 'G2:G,"yyyy-mm-dd"))),' + IN + 'E2:E,' + IN + 'D2:D,' + IN + 'I2:I},' +
            IN + 'B2:B="' + kind + '",' + IN + 'E2:E<>"",' +
            // a typed bank balance is already in the bank rows (via Now)
            'ISNA(MATCH(' + IN + 'A2:A,{' + pgAccounts().banks.map(function (b) { return '"' + b.name + '"'; }).join(';') + '},0))),{"","","","","","",""})';
@@ -126,7 +133,7 @@ function bsViewTab(ss) {
   sh.getRange('A1').setValue('🏛 Balance sheet — what you own and what you owe');
   sh.getRange('A2').setFormula('="Live · "&TEXT(NOW(),"ddd d mmm yyyy")&" · all in CAD · bank balances come from the last statement that carried one; ' +
     'everything else from the Assets & Debts tab"').setFontColor(TH.GREY).setFontStyle('italic');
-  sh.getRange('A3').setFormula('=LET(n,COUNTIFS(' + IN + 'A2:A,"<>",' + IN + 'E2:E,""),old,COUNTIFS(' + IN + 'E2:E,"<>",' + IN + 'F2:F,"<"&TODAY()-60),' +
+  sh.getRange('A3').setFormula('=LET(n,COUNTIFS(' + IN + 'A2:A,"<>",' + IN + 'E2:E,""),old,COUNTIFS(' + IN + 'E2:E,"<>",' + IN + 'G2:G,"<"&TODAY()-60),' +
     'IF(n+old=0,"✅ Every item has a recent value",IF(n>0,"✍ "&n&" item(s) on Assets & Debts have no amount yet","")&IF(AND(n>0,old>0)," · ","")&' +
     'IF(old>0,"⏰ "&old&" value(s) older than 60 days — update them","")))').setFontColor(TH.NAVY).setFontWeight('bold');
 
@@ -169,7 +176,8 @@ function bsViewTab(ss) {
     'HSTACK(acc,MAP(acc,LAMBDA(x,"Cash & bank")),MAP(acc,LAMBDA(x,"Balance + later transactions")),' +
     'MAP(INDEX(k,,3),LAMBDA(d,IF(ISNUMBER(d),TEXT(d,"yyyy-mm-dd"),""))),amt,cur,' +
     'MAP(amt,cur,LAMBDA(v,c,v*' + BS_RATE('c') + '))))';
-  var house = 'LET(v,SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"House"),n,"House under construction (cost so far)",' +
+  // Until its value is typed on Assets & Debts (a row with this name), the house counts at what it cost.
+  var house = 'LET(v,SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"House"),n,"' + BS.HOUSE + '",' +
     'IF(AND(v>0,' + notMine('n') + '),{n,"Property","Your transactions",' + latest + ',v,"CAD",v},{"","","","","","",""}))';
   var lent = 'LET(v,SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Lent"),n,"Money lent to others (net)",' +
     'IF(AND(v>0,' + notMine('n') + '),{n,"Money owed to you","Your transactions",' + latest + ',v,"CAD",v},{"","","","","","",""}))';

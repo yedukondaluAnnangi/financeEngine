@@ -132,6 +132,7 @@ function vwRefresh() {
     }
     var step = pending.shift();
     if (step === 'finish') {
+      try { vwWriteInvested(ss, m); } catch (err) { planIssue('Assets & Debts amount invested failed', err); }
       try { vwWritePlans(ss, m); } catch (err) { planIssue('Writing the Commitments plan column failed', err); }
       vwProtectTransactions(ss);
       try { vwProtectAll(ss); } catch (err) { planIssue('Locking the fact tabs failed', err); }
@@ -1297,7 +1298,7 @@ function vwTodayCards(m) {
   var payFrom = {};
   pgAccounts().cards.forEach(function (c) { payFrom[c.name] = c.payFrom; });
   var note = {};
-  (m.d.adRows || []).forEach(function (r) { if (r[0]) note[String(r[0])] = String(r[6] || ''); });
+  (m.d.adRows || []).forEach(function (r) { if (r[0]) note[String(r[0])] = String(r[7] || ''); });   // H = notes
   m.cardsOut = (m.d.cards || []).map(function (c) {
     var cur = m.curOf(c.name);
     return { name: c.name, cur: cur, owed: c.owedCad / (m.rate[cur] || 1), payFrom: payFrom[c.name] || '',
@@ -1459,6 +1460,38 @@ function vwWritePlans(ss, m) {
 }
 
 /* ---------------------------------------------------------------------------
+   Assets & Debts › Amount invested — worked out from your transactions
+   --------------------------------------------------------------------------- */
+
+/**
+ * What you have put into an asset so far, in that row's own currency:
+ *   Wealthsimple …   every transfer to Wealthsimple (category Investment)
+ *   Gold / jewellery every purchase in a gold / jewellery category
+ *   the house        every house-construction payment (row class Property)
+ * Other rows keep whatever you typed. Written only when the number changed.
+ */
+function vwWriteInvested(ss, m) {
+  var sh = getTab(ss, BS.TAB_INPUT);
+  if (!sh || sh.getLastRow() < 2) return;
+  var n = sh.getLastRow() - 1, rows = sh.getRange(2, 1, n, 6).getValues();
+  var sum = function (test, cur) {
+    return m.ev.filter(function (e) { return e.past && e.cad < 0 && test(e); }).reduce(function (s, e) {
+      return s + (e.cur === cur ? -e.amt : -e.cad / (m.rate[cur] || 1));
+    }, 0);
+  };
+  rows.forEach(function (r, i) {
+    var name = String(r[0] || ''), cls = String(r[2] || ''), cur = String(r[3] || 'CAD') || 'CAD', v = null;
+    if (/wealthsimple/i.test(name)) v = sum(function (e) { return /wealthsimple/i.test(e.source + ' ' + e.what) && e.kind === 'Saved / invested'; }, cur);
+    else if (/gold|jewel/i.test(name)) v = sum(function (e) { return /gold|jewel/i.test(e.catg); }, cur);
+    else if (cls === 'Property' || name === BS.HOUSE) v = sum(function (e) { return e.kind === 'House construction'; }, cur);
+    if (v === null) return;
+    v = Math.round(v * 100) / 100;
+    if (Number(r[5]) !== v) sh.getRange(i + 2, 6).setValue(v);
+    if (!sh.getRange(i + 2, 6).getNote()) sh.getRange(i + 2, 6).setNote('Automatic — the sum of these payments in your transactions.');
+  });
+}
+
+/* ---------------------------------------------------------------------------
    Housekeeping
    --------------------------------------------------------------------------- */
 
@@ -1483,7 +1516,7 @@ var VW_FACT_TABS = {            // whole tab locked, except these columns (yours
   'Dashboard': [], 'Overview': [], 'Trends': [], 'Accounts': [], 'To label': []
 };
 var VW_INPUT_TABS = {           // your tabs: only the formula / Claude columns are locked
-  'Commitments': ['M2:AB', 'AD2:AE'], 'Expected payments': ['M2:N'], 'Assets & Debts': ['H2:H'],
+  'Commitments': ['M2:AB', 'AD2:AE'], 'Expected payments': ['M2:N'], 'Assets & Debts': ['I2:I'],
   'Categories': ['E2:F4'], 'Payees': []   // E8:F8 (HST rate) stays yours
 };
 var VW_TAB_COLOUR = { fact: '#1a73e8', input: '#f9ab00', raw: '#9aa0a6' };

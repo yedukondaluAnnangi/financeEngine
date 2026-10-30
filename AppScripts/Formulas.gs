@@ -402,8 +402,8 @@ function fxDashboardCells() {
   // every charge and payment after its date. Without one: spent since the last payment seen.
   var AD = "'" + BS.TAB_INPUT + "'!";
   put(54, 2, '=BYROW(A54:A57,LAMBDA(a,IF(a="","",LET(' +
-    'typedCad,IFERROR(INDEX(FILTER(' + AD + 'H2:H,' + AD + 'A2:A=a,' + AD + 'E2:E<>""),1),""),' +
-    'typedOn,IFERROR(INDEX(FILTER(' + AD + 'F2:F,' + AD + 'A2:A=a,' + AD + 'E2:E<>""),1),""),' +
+    'typedCad,IFERROR(INDEX(FILTER(' + AD + BS.C.cad + '2:' + BS.C.cad + ',' + AD + 'A2:A=a,' + AD + 'E2:E<>""),1),""),' +
+    'typedOn,IFERROR(INDEX(FILTER(' + AD + BS.C.asof + '2:' + BS.C.asof + ',' + AD + 'A2:A=a,' + AD + 'E2:E<>""),1),""),' +
     'IF(AND(ISNUMBER(typedCad),ISNUMBER(typedOn)),typedCad-SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!A2:A,">"&typedOn),' +
     '-SUMIFS(_Calc!H2:H,_Calc!C2:C,a,_Calc!A2:A,">"&' + lastPay + ',_Calc!J2:J,"<>Moved"))))))');
   put(54, 3, '=BYROW(A54:A57,LAMBDA(a,IF(a="","",IF(' + lastPay + '=0,"none seen",' + lastPay + '))))');

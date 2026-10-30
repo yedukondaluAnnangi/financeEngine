@@ -126,7 +126,7 @@ function pgNowTab(ss) {
     sh.getRange(r, 2).setFormula('=ARRAYFORMULA(LET(st,IFERROR(SORT(FILTER({TEXT(_Balances!D2:D,"yyyy-mm-dd"),_Balances!E2:E},_Balances!C2:C=' + nm + '),1,FALSE),""),' +
       'sd,IFERROR(DATEVALUE(INDEX(st,1,1)),""),sv,IFERROR(VALUE(INDEX(st,1,2)),""),' +
       'mv,IFERROR(INDEX(FILTER(' + PG_AD + 'E2:E,' + PG_AD + 'A2:A=' + nm + ',' + PG_AD + 'E2:E<>""),1),""),' +
-      'md,IFERROR(INDEX(FILTER(' + PG_AD + 'F2:F,' + PG_AD + 'A2:A=' + nm + ',' + PG_AD + 'E2:E<>""),1),""),' +
+      'md,IFERROR(INDEX(FILTER(' + PG_AD + BS.C.asof + '2:' + BS.C.asof + ',' + PG_AD + 'A2:A=' + nm + ',' + PG_AD + 'E2:E<>""),1),""),' +
       // Then roll it forward: every transaction on this account after that date.
       'um,AND(mv<>"",OR(sv="",AND(ISNUMBER(md),md>=sd))),v,IF(um,mv,sv),d,IF(um,md,sd),' +
       'last,MAXIFS(_Calc!$A$2:$A,_Calc!$C$2:$C,' + nm + '),' +
@@ -294,7 +294,7 @@ function pgBigTab(ss) {
     PG_CM + 'H2:H="Loan",' + PG_CM + 'I2:I<>"Cancel",' + PG_CM + 'A2:A<>""),' +
     'nm,INDEX(k,,1),e,INDEX(k,,5),pm,INDEX(k,,4),' +
     'left,MAP(e,LAMBDA(x,IF(x="","",MAX(0,IFERROR(DATEDIF(TODAY(),x,"M")+1,0))))),' +
-    'owed,MAP(nm,LAMBDA(x,IFERROR(INDEX(FILTER(' + PG_AD + 'H2:H,ISNUMBER(SEARCH(REGEXEXTRACT(x,"^\\S+\\s+\\S+"),' + PG_AD + 'A2:A)),' + PG_AD + 'B2:B="Debt",' + PG_AD + 'E2:E<>""),1),"✍ add on Assets & Debts"))),' +
+    'owed,MAP(nm,LAMBDA(x,IFERROR(INDEX(FILTER(' + PG_AD + BS.C.cad + '2:' + BS.C.cad + ',ISNUMBER(SEARCH(REGEXEXTRACT(x,"^\\S+\\s+\\S+"),' + PG_AD + 'A2:A)),' + PG_AD + 'B2:B="Debt",' + PG_AD + 'E2:E<>""),1),"✍ add on Assets & Debts"))),' +
     'HSTACK(nm,INDEX(k,,2),INDEX(k,,3),pm,IF(e="","no end date",e),left,MAP(left,pm,LAMBDA(l,p,IF(l="","",l*p))),owed)),6,8),"No loans on Commitments")');
   sh.getRange(11, 2, 6, 1).setNumberFormat('#,##0');
   sh.getRange(11, 4, 6, 1).setNumberFormat('$#,##0');
