@@ -637,8 +637,8 @@ function vwEstimates(m) {
   m.ev.forEach(function (e) {
     if (!e.past || e.cad >= 0 || full.indexOf(e.date.slice(0, 7)) === -1) return;
     if (VW.NOT_SPENDING.indexOf(e.kind) !== -1 || recurring[e.catg]) return;
-    // The house is a project with its own budget (an open Commitments row), not a monthly pace.
-    if (e.kind === 'House construction' && vwOpenBudgets(m).some(function (o) { return o.kind === e.kind; })) return;
+    // The house is a project: only signed contract instalments (Commitments rows) are planned, never a monthly pace.
+    if (e.kind === 'House construction') return;
     est[m.country(e.acct)] += e.amt / full.length;
   });
   m.est = est;
