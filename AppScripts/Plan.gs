@@ -31,7 +31,7 @@
    --------------------------------------------------------------------------- */
 
 var PLAN = {
-  VERSION    : '2026-10-27.13',   // bump on every change to force a rebuild on the next poll
+  VERSION    : '2026-10-29.1',   // bump on every change to force a rebuild on the next poll
   TAB_DASH   : 'Dashboard',
   TAB_COMMIT : 'Commitments',
 
@@ -41,7 +41,10 @@ var PLAN = {
   DECISIONS  : ['Keep', 'Cancel', 'Later', 'Review'],   // Later = parked: not due, not counted, not a saving
   // Commitments AC / AD, right of the formula columns M–AA (AA = paid last month — never write there): how each payment moves, and Claude's advice.
   // Auto-debit / Card / Direct deposit / Bank fee need no action (Home leaves them off the to-do list).
-  HOW        : ['Auto-debit', 'Card', 'Direct deposit', 'Bank fee', 'e-Transfer', 'UPI / PhonePe', 'Remitly', 'Cash', 'Cheque', 'Mixed'],
+  HOW        : ['Auto-debit', 'Card', 'Direct deposit', 'Bank fee', 'e-Transfer', 'Bill payment', 'UPI / PhonePe', 'Remitly', 'Cash', 'Cheque', 'Mixed'],
+  LAST_COL   : 28,   // AB  last paid: date · amount (formula)
+  PLAN_COL   : 31,   // AE  📅 when to pay & why (written by the Views rebuild)
+  CARD_COL   : 32,   // AF–AH  cards only: limit, statement closes (day), utilisation target
   HOW_COL    : 29,
 
   /**
@@ -942,6 +945,37 @@ function planHowColumns(sh) {
   sh.setColumnWidth(c + 1, 420);
   sh.getRange(1, c).setNote('How the money moves. Auto-debit, Card, Direct deposit and Bank fee take themselves — Home only ' +
     'checks the account has the money. e-Transfer, UPI, Remitly, Cash and Cheque are yours to do, so they are on Home\'s to-do list.');
+  // AB: last payment seen in the bank, date and amount in one cell.
+  var L = PLAN.LAST_COL, P = PLAN.PLAN_COL, K = PLAN.CARD_COL;
+  if (sh.getMaxColumns() < K + 2) sh.insertColumnsAfter(sh.getMaxColumns(), K + 2 - sh.getMaxColumns());
+  sh.getRange(2, L, rows, 1).clearContent();   // the formula spills down; anything left here would block it
+  sh.getRange(1, L).setFormula('={"Last paid";ARRAYFORMULA(IF(A2:A="","",IF(NOT(ISNUMBER(P2:P)),"— not seen yet",' +
+    'TEXT(P2:P,"d mmm")&" · "&IF(D2:D="INR","₹","$")&TEXT(Q2:Q,"#,##0.00"))))}');
+  sh.getRange(2, L, rows, 1).setFontColor(TH.GREY);
+  sh.setColumnWidth(L, 140);
+  // AE: the plan for each row (dates and why) — written by the Views rebuild. AF–AH: card settings.
+  sh.getRange(1, P, 1, 4).setValues([['📅 When to pay & why', 'Card: limit', 'Card: statement closes (day)', 'Card: keep under']]);
+  thHeader(sh.getRange(1, L)); thHeader(sh.getRange(1, P, 1, 4));
+  sh.getRange(2, P, rows, 1).setWrap(true).setFontSize(9);
+  sh.setColumnWidth(P, 520);
+  sh.getRange(2, K, rows, 3).setBackground(TH.INPUT);
+  sh.getRange(2, K, rows, 1).setNumberFormat('#,##0');
+  sh.getRange(2, K + 2, rows, 1).setNumberFormat('0%');
+  [K, K + 1, K + 2].forEach(function (col) { sh.setColumnWidth(col, 95); });
+  sh.getRange(1, K).setNote('Credit cards only. With the limit and the day the statement closes, the plan adds a pay-down before ' +
+    'the close (the closing balance is what the credit bureau sees) and the statement payment before the due date. ' +
+    'Keep under: the utilisation target, 20% if blank. Due (column F) = the statement due day.');
+  // Not approved yet (Decision blank or Review) = orange row, until you choose Keep, Cancel or Later.
+  var mark = '=AND($A2<>"",OR($I2="",$I2="Review"))';
+  var cf = sh.getConditionalFormatRules().filter(function (x) {
+    var b = x.getBooleanCondition();
+    return !(b && b.getCriteriaValues && String(b.getCriteriaValues()[0]) === mark);
+  });
+  cf.unshift(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(mark).setBackground('#ffe0b2')
+    .setRanges([sh.getRange(2, 1, rows, 12)]).build());
+  sh.setConditionalFormatRules(cf);
+  sh.getRange(1, 9).setNote('Keep = approved: it must happen, and the plan (column AE) makes sure the money is there. ' +
+    'Cancel = stop it. Later = parked. Blank or Review = not approved yet — the row stays orange until you decide.');
   // AA (paid last month) is a formula column: undo a dropdown / input colour an older build put there.
   sh.getRange(2, FX.COMMIT_CALC_COL + FX.COMMIT_CALC.length - 1, rows, 1).clearDataValidations().setBackground(null);
   [[13, 18], [21, FX.COMMIT_CALC_COL + FX.COMMIT_CALC.length - 1]].forEach(function (g) {   // M–R, U–AA

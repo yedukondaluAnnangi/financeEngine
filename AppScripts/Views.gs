@@ -132,6 +132,7 @@ function vwRefresh() {
     }
     var step = pending.shift();
     if (step === 'finish') {
+      try { vwWritePlans(ss, m); } catch (err) { planIssue('Writing the Commitments plan column failed', err); }
       vwProtectTransactions(ss);
       try { vwProtectAll(ss); } catch (err) { planIssue('Locking the fact tabs failed', err); }
       vwArrangeTabs(ss);
@@ -240,8 +241,11 @@ function vwModel(d) {
   var horizon = pMonthAdd(today.slice(0, 7), VW.FORECAST_MONTHS) + '-' + pLastDay(pMonthAdd(today.slice(0, 7), VW.FORECAST_MONTHS));
   var cms = planReadCommitments(d.cm, rate);
   m.cms = cms;
+  m.cardRows = [];
   cms.forEach(function (c) {
     var r = d.cm[c.row - 2];
+    // A credit card row is planned from its own limit and dates (vwCardEvents), not as a bill.
+    if (vwIsCardRow(c, r)) { m.cardRows.push({ c: c, r: r }); return; }
     var dec = String(c.decision || '');
     if (/^(cancel|later)$/i.test(dec)) {
       if (/^⚠/.test(String(r[19] || ''))) ev.push(vwCm(m, c, r, pCellIso(r[17]) || today, '⚠ ' + String(r[19]).replace(/^⚠\s*/, '') + ' — check', 'check'));
@@ -294,6 +298,7 @@ function vwModel(d) {
       tag: 'todo', moveTo: mv.to, source: 'Now tab · ' + mv.text });
   });
 
+  vwCardEvents(m);
   vwPairTransfers(m);
 
   // Facts the other pages share.
@@ -968,6 +973,10 @@ function vwTodo(m) {
   m.ev.filter(function (e) { return e.exKey && e.tag === 'planned' && e.date <= soon; }).forEach(function (e) {
     out.push({ key: 'ex|' + e.exKey, what: 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + ' (you approved it)', when: vwDay(e.date) });
   });
+  // Card payments (pay-down before the statement closes, statement before the due date).
+  m.ev.filter(function (e) { return e.cardPay && e.date <= soon; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (e) {
+    out.push({ key: 'cd|' + e.what + '|' + e.date, what: e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + byHow(e) + (/^Pay down/.test(e.what) ? ' — keeps the reported balance under target' : ''), when: 'by ' + vwDay(e.date), cm: e.cmName });
+  });
   var found = m.ev.filter(function (e) { return e.tag === 'found'; }).length;
   if (found) out.push({ key: 'ex|review', what: 'Approve or reject ' + found + ' payment(s) found in your messages — Expected payments tab', when: 'this week' });
   if (vwStale(m).length) out.push({ key: 'st|upload', what: 'Upload statements: ' + m.stale.map(function (a) { return vwShort(a.name); }).join(', '), when: 'pay night' });
@@ -1099,8 +1108,10 @@ function vwTodayPage(m) {
   if (overdue) parts.push('🔴 ' + overdue + ' overdue');
   if (m.moves.length) parts.push('💸 ' + m.moves.length + ' money move' + (m.moves.length > 1 ? 's' : ''));
   if (open) parts.push('👉 ' + open + ' to do');
+  var unapproved = m.cms.filter(function (c) { return !c.income && (!c.decision || /^review$/i.test(c.decision)); }).length;
+  if (unapproved) parts.push('🟠 ' + unapproved + ' commitment' + (unapproved > 1 ? 's' : '') + ' to approve');
   if (bad) parts.push('🩺 ' + bad + ' check' + (bad > 1 ? 's' : '') + ' to look at');
-  var tone = overdue ? 'bad' : (open || bad) ? 'warn' : 'good';
+  var tone = overdue ? 'bad' : (open || bad || unapproved) ? 'warn' : 'good';
   var r = p.rows.length;
   p.rows.push([tone === 'good' ? '✅  All good — nothing needs you today' : (tone === 'bad' ? '🔴  ' : '⚠  ') + 'Needs you:   ' + parts.join('    ·    ')]);
   p.merges.push([r, 0, 1, W]); p.heights[r] = 44;
@@ -1274,7 +1285,7 @@ function vwTodayAccount(m, b, soon) {
   });
   var after = b.bal === null ? null : b.bal + inT - outT;
   var status = after === null ? '✍ Type a balance on Assets & Debts'
-    : after < -1 ? '⚠ Short ' + (cur === 'INR' ? '₹' : '$') + vwR(-after).toLocaleString('en-US') + ' — move money in'
+    : after * rate < -2 ? '⚠ Short ' + (cur === 'INR' ? '₹' : '$') + vwR(-after).toLocaleString('en-US') + ' — move money in'
     : m.moves.some(function (mv) { return mv.to === b.name; }) ? '✅ OK once the move arrives'
     : '✅ OK — ' + (cur === 'INR' ? '₹' : '$') + vwR(after).toLocaleString('en-US') + ' left';
   return { name: b.name, cur: cur, bal: b.bal, inTotal: inT, outTotal: outT, after: after, status: status, lines: lines };
@@ -1293,6 +1304,158 @@ function vwTodayCards(m) {
              note: (note[c.name] || 'Pay the statement in full by its due date').replace(/^You, \d+ \w+:?\s*/, '') };
   });
   return m.cardsOut;
+}
+
+/* ---------------------------------------------------------------------------
+   📅 The plan for every commitment — when to pay, and why (Commitments column AE)
+   --------------------------------------------------------------------------- */
+
+// Days before the due date to act, by how it is paid (so the money lands in time).
+var VW_LEAD = { 'e-transfer': 2, 'bill payment': 3, 'remitly': 4, 'cheque': 5, 'upi / phonepe': 0, 'cash': 0, 'auto-debit': 1, 'card': 0 };
+function vwLeadFor(how) { var k = String(how || '').toLowerCase(); return VW_LEAD[k] !== undefined ? VW_LEAD[k] : 1; }
+
+/** A Commitments row that is a credit card's own plan (category Creditcard, or a limit in AF). */
+function vwIsCardRow(c, r) { return /^creditcard$/i.test(c.cat) || vwNum(r[PLAN.CARD_COL - 1]) > 0; }
+
+/** The card a card row is about: the card whose first word (Neo, HDFC, CIBC) is in the row's name. */
+function vwCardFor(m, name) {
+  return vwTodayCards(m).filter(function (k) {
+    var w = k.name.split(' ')[0];
+    return new RegExp('\\b' + w + '\\b', 'i').test(name) || (/regalia/i.test(k.name) && /regalia/i.test(name));
+  })[0] || null;
+}
+
+/**
+ * A card's two payments a cycle:
+ *   ① before the statement closes — pay down so the closing balance (what the credit bureau is
+ *      told) stays under the target share of the limit;
+ *   ② before the due date — pay the full statement, so no interest.
+ * Amounts in the card's money. Steps with an amount become planned events (Today's to-do list).
+ */
+function vwCardPlan(m, c, r) {
+  var card = vwCardFor(m, c.name);
+  if (!card) return null;
+  var today = m.today, ym = today.slice(0, 7), lead = vwLeadFor(r[PLAN.HOW_COL - 1] || 'Bill payment');
+  var limit = vwNum(r[PLAN.CARD_COL - 1]), close = parseInt(r[PLAN.CARD_COL], 10) || 0;
+  var target = vwNum(r[PLAN.CARD_COL + 1]) || 0.2; if (target > 1) target = target / 100;
+  var dueDay = parseInt(c.due, 10) || 0;
+  var sym = card.cur === 'INR' ? '₹' : '$';
+  var money = function (v) { return sym + Math.round(v).toLocaleString(card.cur === 'INR' ? 'en-IN' : 'en-US'); };
+  var dayIn = function (y, d) { return y + '-' + ('0' + Math.min(d, pLastDay(y))).slice(-2); };
+  var payBy = function (d) { var x = pAddDays(d, -lead); return x < today ? today : x; };
+  var dueAfter = function (s) { var d = dayIn(s.slice(0, 7), dueDay); return d > s ? d : dayIn(pMonthAdd(s.slice(0, 7), 1), dueDay); };
+  var out = { card: card, steps: [], text: [] };
+  if (!close || !dueDay) {
+    out.text.push('Add the card limit (AF) and the day its statement closes (AG) to plan the payments');
+    return out;
+  }
+  var thisClose = dayIn(ym, close);
+  var prevClose = thisClose <= today ? thisClose : dayIn(pMonthAdd(ym, -1), close);
+  var nextClose = thisClose > today ? thisClose : dayIn(pMonthAdd(ym, 1), close);
+  // Card balance now (typed balance + later charges), plus charges planned on the card before the close.
+  var future = m.ev.filter(function (e) { return !e.past && e.acct === card.name && e.dir === 'Out' && e.date > today && e.date <= nextClose; })
+    .reduce(function (s, e) { return s - e.amt; }, 0);
+  var atClose = card.owed + future, cap = target * limit;
+
+  // A statement that has closed and is not due yet comes first.
+  var due1 = dueAfter(prevClose);
+  if (due1 >= today) {
+    var since = m.ev.filter(function (e) { return e.past && e.acct === card.name && e.date > prevClose; })
+      .reduce(function (s, e) { return s + e.amt; }, 0);
+    var stmt = Math.max(0, card.owed + since);
+    out.steps.push({ date: payBy(due1), amt: stmt, kind: 'statement',
+      text: '② Pay the full statement (about ' + money(stmt) + ') by ' + vwDay(payBy(due1)) + ' — due ' + vwDay(due1) + ', so no interest' });
+  }
+  if (limit) {
+    var pay1 = Math.max(0, atClose - cap);
+    out.steps.push({ date: payBy(nextClose), amt: pay1, kind: 'paydown',
+      text: pay1 > 1
+        ? '① Pay down ' + money(pay1) + ' by ' + vwDay(payBy(nextClose)) + ' — the balance on ' + vwDay(nextClose) + ' is reported to the credit bureau; keep it under ' + money(cap) + ' (' + Math.round(target * 100) + '% of ' + money(limit) + ')'
+        : '① No pay-down needed before ' + vwDay(nextClose) + ' — about ' + money(atClose) + ' will be reported, under ' + money(cap) + ' (' + Math.round(target * 100) + '%)' });
+  }
+  if (due1 < today) {
+    var due2 = dueAfter(nextClose), stmt2 = limit ? Math.min(atClose, cap) : atClose;
+    out.steps.push({ date: payBy(due2), amt: 0, kind: 'statement',   // not yet known: no to-do item until the statement exists
+      text: '② Then pay that statement in full (about ' + money(stmt2) + ') by ' + vwDay(payBy(due2)) + ' — due ' + vwDay(due2) });
+  }
+  out.steps.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  out.text = out.steps.map(function (s) { return s.text; });
+  return out;
+}
+
+/** Card payments as planned events: Today's to-do list and the Ledger. Never counted as spending (dir Move). */
+function vwCardEvents(m) {
+  (m.cardRows || []).forEach(function (x) {
+    if (/^(cancel|later)$/i.test(x.c.decision)) return;
+    var plan = vwCardPlan(m, x.c, x.r);
+    x.plan = plan;
+    if (!plan) return;
+    var payer = m.fullAcct(x.c.acct) || plan.card.payFrom;
+    var how = String(x.r[PLAN.HOW_COL - 1] || 'Bill payment');
+    plan.steps.forEach(function (s) {
+      if (!(s.amt > 1)) return;
+      var cad = s.amt * (m.rate[plan.card.cur] || 1);
+      m.ev.push({ date: s.date, what: (s.kind === 'paydown' ? 'Pay down ' : 'Pay the statement of ') + vwShort(plan.card.name),
+        acct: payer, amt: -s.amt, cur: plan.card.cur, cad: -cad, catg: 'Creditcard', kind: VW.MOVED, past: false, dir: 'Move',
+        status: '🗓 Planned — ' + (s.kind === 'paydown' ? 'keeps the reported balance under target' : 'statement in full, no interest'),
+        tag: 'planned', cardPay: true, how: how, cmName: x.c.name, source: 'Card plan · ' + s.text });
+    });
+  });
+}
+
+/** Column AE text for one commitment row. */
+function vwCommitPlan(m, c, r, cardPlan) {
+  var dec = String(c.decision || ''), how = String(r[PLAN.HOW_COL - 1] || '').trim();
+  var pre = (!dec || /^review$/i.test(dec)) ? '🟠 Not approved yet — choose Keep (it must happen) or Cancel. ' : '';
+  if (/^cancel$/i.test(dec)) return '✂ Cancelled — nothing to pay. ' + (/^⚠/.test(String(r[19])) ? '⚠ It charged again: dispute it.' : 'Watch that it does not charge again.');
+  if (/^later$/i.test(dec)) return '⏸ Parked — not planned, not counted.';
+  if (cardPlan) return pre + cardPlan.text.join('\n');
+  var evs = m.ev.filter(function (e) { return !e.past && e.cmName === c.name && !e.cardPay && (e.tag === 'planned' || e.tag === 'overdue'); })
+    .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  if (!evs.length) return pre + (/^❔/.test(String(r[19])) ? '❔ ' + String(r[19]).replace(/^❔\s*/, '') + ' — upload a newer statement.' : 'Nothing due in the next 12 months.');
+  var e = evs[0], next = evs[1] ? '  ·  then ' + vwDay(evs[1].date) + (evs[2] ? ', ' + vwDay(evs[2].date) : '') : '';
+  var amt = (e.cur === 'INR' ? '₹' : '$') + Math.abs(vwR(e.amt)).toLocaleString(e.cur === 'INR' ? 'en-IN' : 'en-US');
+  var acct = vwShort(e.acct);
+  if (e.dir === 'In') return pre + 'Comes in ' + vwDay(e.date) + ' into ' + acct + ' (' + (how || 'deposit') + ')' + next;
+  if (e.tag === 'overdue') return pre + '🔴 Overdue since ' + vwDay(e.date) + ' — pay ' + amt + ' from ' + acct + ' now' + (how ? ' (' + how + ')' : '') + next;
+  var cover = vwCover(m, e.acct);
+  if (m.d.accounts.some(function (a) { return a.card && a.name === e.acct; }))
+    return pre + 'Charged to ' + acct + ' on ' + vwDay(e.date) + ' (' + amt + ') → paid with that card\'s bill' + next;
+  if (/^auto-debit|^bank fee/i.test(how))
+    return pre + 'Auto-debit ' + vwDay(e.date) + ' from ' + acct + ' → keep ' + amt + ' there by ' + vwDay(pAddDays(e.date, -1)) + '  ' + cover + next;
+  var by = pAddDays(e.date, -vwLeadFor(how));
+  if (by < m.today) by = m.today;
+  return pre + 'Send ' + amt + ' from ' + acct + ' by ' + vwDay(by) + (how ? ' (' + how + ')' : '') + ' so it lands by ' + vwDay(e.date) + '  ' + cover + next;
+}
+
+/** "✅ covered" / "⚠ RBC short — move money in" for the account a payment comes out of (Today's numbers). */
+function vwCover(m, acct) {
+  if (!m.coverOf) {
+    m.coverOf = {};
+    m.nowInfo.banks.forEach(function (b) { m.coverOf[b.name] = vwTodayAccount(m, b, pAddDays(m.today, PG.MOVE_DAYS)).status; });
+  }
+  var s = m.coverOf[acct];
+  if (!s) return '';
+  if (/once the move/.test(s)) return '✅ covered once the move into ' + vwShort(acct) + ' arrives';
+  return /^✅/.test(s) ? '✅ money is there' : s;
+}
+
+/** Write column AE on Commitments (only when something changed, so it does not trigger another rebuild). */
+function vwWritePlans(ss, m) {
+  var sh = getTab(ss, PLAN.TAB_COMMIT);
+  if (!sh || sh.getLastRow() < 2) return;
+  var n = sh.getLastRow() - 1, col = PLAN.PLAN_COL;
+  if (sh.getMaxColumns() < col) return;
+  var cards = {};
+  (m.cardRows || []).forEach(function (x) { cards[x.c.row] = x.plan || vwCardPlan(m, x.c, x.r); });
+  var want = [];
+  for (var i = 0; i < n; i++) want.push(['']);
+  m.cms.forEach(function (c) {
+    var r = m.d.cm[c.row - 2];
+    if (c.row - 2 < n) want[c.row - 2] = [vwCommitPlan(m, c, r, cards[c.row] || null)];
+  });
+  var rg = sh.getRange(2, col, n, 1), have = rg.getValues();
+  if (JSON.stringify(have) !== JSON.stringify(want)) rg.setValues(want);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1320,7 +1483,7 @@ var VW_FACT_TABS = {            // whole tab locked, except these columns (yours
   'Dashboard': [], 'Overview': [], 'Trends': [], 'Accounts': [], 'To label': []
 };
 var VW_INPUT_TABS = {           // your tabs: only the formula / Claude columns are locked
-  'Commitments': ['M2:AA', 'AD2:AD'], 'Expected payments': ['M2:N'], 'Assets & Debts': ['H2:H'],
+  'Commitments': ['M2:AB', 'AD2:AE'], 'Expected payments': ['M2:N'], 'Assets & Debts': ['H2:H'],
   'Categories': ['E2:F4'], 'Payees': []   // E8:F8 (HST rate) stays yours
 };
 var VW_TAB_COLOUR = { fact: '#1a73e8', input: '#f9ab00', raw: '#9aa0a6' };
