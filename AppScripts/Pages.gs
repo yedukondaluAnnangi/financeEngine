@@ -105,7 +105,7 @@ function pgNowTab(ss) {
 
   sh.getRange('A1').setValue('📅 Now — what to pay, from where, and what to move');
   pgNote(sh.getRange('A2').setFormula('="Live · "&TEXT(NOW(),"ddd d mmm yyyy HH:mm")&" · short term: today and the next ' + PG.LIST_DAYS +
-    ' days. The long view is on the Big picture tab."'));
+    ' days. The long view is on Forecast and Net worth."'));
   sh.getRange('A3').setFormula('=Dashboard!A3').setFontWeight('bold').setFontColor(TH.NAVY);
   sh.getRange('A4').setFormula('="👉 Cash in your accounts: "&TEXT(D' + bTot + ',"$#,##0")&"  ·  spare after the next ' + PG.MOVE_DAYS + ' days: "&TEXT(J' + bTot + ',"$#,##0;-$#,##0")' +
     '&"  ·  "&COUNTIF(K' + b0 + ':K' + bEnd + ',"⚠*")&" account(s) need money moved in"' +
@@ -556,6 +556,6 @@ function pgMapChart(ss) {
 /** Build the pages (on a version change). */
 function pgInstall(ss) {
   pgNowTab(ss);
-  pgBigTab(ss);
+  // Big picture was replaced by Net worth, Forecast and Summary (deleted 30 Oct 2026).
   // The Money map was replaced by Today's account view (deleted 27 Oct 2026).
 }

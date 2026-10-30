@@ -42,7 +42,7 @@ var VW = {
   HOURLY_LAG: 11,         // a Friday payday pays the Mon–Fri week that started this many days before
   MOVED: 'Moved between your accounts',
   HOUSE_CASH: 'Construction - labour (cash)',   // India ATM cash beyond the parents' share
-  TAB_ORDER: ['🏠 Today', '🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', 'Money map', 'Big picture', '🏛 Net worth',
+  TAB_ORDER: ['🏠 Today', '🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', '🏛 Net worth',
               'Expected payments', 'Commitments', 'Assets & Debts', 'Balance Sheet', 'Categories', 'Transactions', 'Payees'],
   OLD_TABS_2: ['🏠 Home', '🩺 Health', 'Now', 'Money map', 'Balance Sheet', 'Categories'],   // Transactions + Payees stay, last
   OLD_TABS: ['Overview', 'Dashboard', 'Trends', 'Accounts', 'To label', 'Summary', 'Month Ahead', 'CarInsurance', 'Sheet4', '_Peek'],
@@ -1629,6 +1629,44 @@ function vwNetWorthPage(m) {
   vwStyle(p, nr, nr + 1, 0, W, { bg: C.NAVY, color: C.WHITE, bold: true, size: 12 }); vwNumFmt(p, nr, nr + 1, 3, 4, VW_CAD);
   p.rows.push(['', 'The house counts at what it cost until you type its value on Assets & Debts. Its cost before Aug 2026 comes in when older HDFC statements are uploaded.']);
   vwStyle(p, nr + 1, nr + 2, 1, 2, { italic: true, color: C.GREY });
+
+  // 🏦 Loans: what each costs and when it ends. The balance owed is in the list above.
+  p.rows.push([]);
+  var loans = m.cms.filter(function (c) { return c.cat === 'Loan' && !/^(cancel|later)$/i.test(c.decision); });
+  var lr0 = p.rows.length;
+  p.rows.push(['', '🏦  LOANS (' + loans.length + ')', '', loans.reduce(function (s, c) { return s + c.cad; }, 0), '', '', '', 'CAD a month, all loans']);
+  vwStyle(p, lr0, lr0 + 1, 0, W, { bg: C.LIGHT, bold: true, size: 12 }); vwNumFmt(p, lr0, lr0 + 1, 3, 4, VW_CAD); p.heights[lr0] = 30;
+  var ls = p.rows.length;
+  loans.forEach(function (c) {
+    var left = c.ends ? planDueDates(c, m.today, c.ends).length : '';
+    var r = p.rows.length;
+    p.rows.push(['', '      ' + c.name, c.amount, c.cad, '', '', c.ends ? vwTxt(vwDay(c.ends)) : '', c.ends ? left + ' payments left' : 'No end date on Commitments']);
+    vwNumFmt(p, r, r + 1, 2, 3, c.cur === 'INR' ? VW_INR : VW_CAD2); vwNumFmt(p, r, r + 1, 3, 4, VW_CAD);
+    vwStyle(p, r, r + 1, 6, 8, { color: C.GREY });
+  });
+  if (p.rows.length > ls) p.groups.push([ls, p.rows.length]);
+
+  // 💼 Business expenses this year, for the tax return: category ▸ payee.
+  p.rows.push([]);
+  var yr = m.today.slice(0, 4);
+  var biz = m.ev.filter(function (e) { return e.past && e.cad < 0 && e.kind === 'Business costs' && e.date.slice(0, 4) === yr; });
+  var br0 = p.rows.length;
+  p.rows.push(['', '💼  BUSINESS EXPENSES ' + yr + ' — for your tax return (' + biz.length + ')', '', -sum(biz)]);
+  vwStyle(p, br0, br0 + 1, 0, W, { bg: C.LIGHT, bold: true, size: 12 }); vwNumFmt(p, br0, br0 + 1, 3, 4, VW_CAD); p.heights[br0] = 30;
+  var bs0 = p.rows.length;
+  vwUniq(biz.map(function (e) { return e.catg; })).sort().forEach(function (cg) {
+    var inC = biz.filter(function (e) { return e.catg === cg; }), cr = p.rows.length;
+    p.rows.push(['', '   ' + cg + '  (' + inC.length + ')', '', -sum(inC)]);
+    vwStyle(p, cr, cr + 1, 1, 2, { bold: true }); vwNumFmt(p, cr, cr + 1, 3, 4, VW_CAD);
+    var cs = p.rows.length;
+    vwUniq(inC.map(function (e) { return e.what; })).forEach(function (w) {
+      var ir = p.rows.length;
+      p.rows.push(['', '            ' + vwSafe(w), '', -sum(inC.filter(function (e) { return e.what === w; }))]);
+      vwNumFmt(p, ir, ir + 1, 3, 4, VW_CAD); vwStyle(p, ir, ir + 1, 1, 2, { color: C.GREY });
+    });
+    p.groups.push([cs, p.rows.length]);
+  });
+  if (p.rows.length > bs0) p.groups.push([bs0, p.rows.length]);
   p.widths = [30, 360, 120, 110, 120, 110, 95, 230];
   return p;
 }
@@ -1654,7 +1692,7 @@ function vwProtectTransactions(ss) {
 var VW_LOCK = '🔒 Finance Engine — facts, worked out by the sheet';
 var VW_FACT_TABS = {            // whole tab locked, except these columns (yours on a fact page)
   '🏠 Today': ['A'], '🏛 Net worth': [], '🏠 Home': ['A'], '📒 Ledger': [], '🗂 Summary': [], '🧠 Habits': ['G'], '🔮 Forecast': [], '🩺 Health': [],
-  'Now': [], 'Money map': [], 'Big picture': [], 'Balance Sheet': [],
+  'Now': [], 'Balance Sheet': [],
   'Dashboard': [], 'Overview': [], 'Trends': [], 'Accounts': [], 'To label': []
 };
 var VW_INPUT_TABS = {           // your tabs: only the formula / Claude columns are locked
