@@ -19,8 +19,8 @@
  */
 
 var VW = {
-  HOME: '🏠 Home', TODAY: '🏠 Today', NETWORTH: '🏛 Net worth', LEDGER: '📒 Ledger', SUMMARY: '🗂 Summary',
-  HABITS: '🧠 Habits', FORECAST: '🔮 Forecast', HEALTH: '🩺 Health',
+  TODAY: '🏠 Today', NETWORTH: '🏛 Net worth', MONEY: '📒 Money',
+  HABITS: '🧠 Habits', FORECAST: '🔮 Forecast',
   NEXT_DAYS: 30,          // ⏳ Next 30 days
   LATER_MONTHS: 3,        // 🗓 Later runs to the end of this many months ahead
   PAST_MONTHS: 3,         // Summary: finished months shown
@@ -32,7 +32,7 @@ var VW = {
   MIN_GAP_MIN: 10,        // at most one edit-driven rebuild per this many minutes
   TIME_BUDGET_MS: 200000, // a poll stops writing pages after this, and the next poll carries on
   // 'finish' = locks + tab order: right after Today, and again at the end for the pages rebuilt since.
-  RENDER_ORDER: ['today', 'networth', 'finish', 'forecast', 'habits', 'summary', 'ledger', 'finish'],   // Home + Health live inside Today
+  RENDER_ORDER: ['today', 'networth', 'finish', 'forecast', 'habits', 'money', 'finish'],
   PAIR_BEFORE: 2,         // a transfer may land this many days before it leaves (bank dating)…
   PAIR_AFTER: 7,          // …or this many after (Remitly, e-transfers)
   PAIR_SLACK: 0.08,       // amounts may differ this much (exchange rate, fees)
@@ -42,10 +42,9 @@ var VW = {
   HOURLY_LAG: 11,         // a Friday payday pays the Mon–Fri week that started this many days before
   MOVED: 'Moved between your accounts',
   HOUSE_CASH: 'Construction - labour (cash)',   // India ATM cash beyond the parents' share
-  TAB_ORDER: ['🏠 Today', '🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', '🏛 Net worth',
-              'Expected payments', 'Commitments', 'Assets & Debts', 'Balance Sheet', 'Categories', 'Transactions', 'Payees'],
-  OLD_TABS_2: ['🏠 Home', '🩺 Health', 'Now', 'Money map', 'Balance Sheet', 'Categories'],   // Transactions + Payees stay, last
-  OLD_TABS: ['Overview', 'Dashboard', 'Trends', 'Accounts', 'To label', 'Summary', 'Month Ahead', 'CarInsurance', 'Sheet4', '_Peek'],
+  TAB_ORDER: ['🏠 Today', 'Commitments', '📒 Money', '🔮 Forecast', '🏛 Net worth', 'Assets & Debts', '🧠 Habits', 'Transactions', 'Payees'],
+  OLD_TABS_2: ['Now', 'Balance Sheet', 'Categories'],
+  OLD_TABS: ['Dashboard'],
   AUTO_PAY: /^(auto-debit|card|direct deposit|bank fee)/i,   // "How it's paid" values that need no action from you
   UNPLANNED_GROUPS: ['Lifestyle', 'Fees & charges'],
   UNPLANNED_CATS: ['Subscription - cancel'],
@@ -117,16 +116,17 @@ function vwMaybeRefresh() {
 function vwRefresh() {
   var props = PropertiesService.getScriptProperties(), start = Date.now();
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
+  try { vwTidyInputs(ss); } catch (err) { planIssue('Sorting Commitments / Assets & Debts failed', err); }
   var d = vwRead(ss);
   var m = vwModel(d);
   // Every page is worked out (cheap — some read numbers from others), then written in order.
   var built = {
-    ledger: vwLedgerPage(m), summary: vwSummaryPage(m), habits: vwHabitsPage(m), forecast: vwForecastPage(m),
-    health: vwHealthPage(m), home: vwHomePage(m), today: vwTodayPage(m), networth: vwNetWorthPage(m)
+    habits: vwHabitsPage(m), forecast: vwForecastPage(m), today: vwTodayPage(m), networth: vwNetWorthPage(m), money: vwMoneyPage(m)
   };
   var pending = JSON.parse(props.getProperty('vw_pending') || 'null') || VW.RENDER_ORDER.slice();
   while (pending.length) {
-    if (Date.now() - start > VW.TIME_BUDGET_MS) {
+    // Money is the big page: it starts only with most of the run still ahead.
+    if (Date.now() - start > (pending[0] === 'money' ? 90000 : VW.TIME_BUDGET_MS)) {
       props.setProperty('vw_pending', JSON.stringify(pending));
       vwSaveState(m);
       return false;
@@ -165,7 +165,7 @@ function vwValues(ss, name) {
 function vwRead(ss) {
   var cat = vwValues(ss, 'Categories').v;
   var cm = vwValues(ss, PLAN.TAB_COMMIT);
-  var home = vwValues(ss, VW.HOME), habits = vwValues(ss, VW.HABITS), today = vwValues(ss, VW.TODAY);
+  var habits = vwValues(ss, VW.HABITS), today = vwValues(ss, VW.TODAY);
   var dash = vwValues(ss, PLAN.TAB_DASH).v, ad = vwValues(ss, BS.TAB_INPUT).v;
   var runs = vwValues(ss, CFG.TAB_RUNS).v;
   return {
@@ -173,10 +173,8 @@ function vwRead(ss) {
     cat: cat,
     tx: vwValues(ss, CFG.TAB_TX).v.slice(1),
     cm: cm.v.slice(1), cmText: cm.t.slice(1),
-    ex: vwValues(ss, EX.TAB).v.slice(1),
     now: vwValues(ss, PG.TAB_NOW),
-    big: vwValues(ss, PG.TAB_BIG).t,
-    homeRows: home.v, habitRows: habits.v, todayRows: today.v,
+    habitRows: habits.v, todayRows: today.v,
     cards: dash.slice(53, 57).filter(function (r) { return r[0]; }).map(function (r) { return { name: String(r[0]), owedCad: vwNum(r[1]) }; }),
     adRows: ad.slice(1),
     bsRows: vwValues(ss, BS.TAB_VIEW).v,
@@ -285,18 +283,6 @@ function vwModel(d) {
     });
   });
 
-  // Expected payments found in messages.
-  d.ex.forEach(function (r) {
-    var what = String(r[3] || '').trim();
-    if (!what || /^reject/i.test(String(r[10])) || /^💸/.test(String(r[13]))) return;
-    var amt = vwNum(r[4]), cur = String(r[5] || 'CAD').trim() || 'CAD', due = pCellIso(r[6]) || vwParseDate(r[6]);
-    var ok = /^approve/i.test(String(r[10]));
-    var acct = m.fullAcct(String(r[7] || '')) || '(no account set)';
-    ev.push({ date: ok ? (due || today) : today, what: what, acct: acct, amt: -amt, cur: cur, cad: -amt * (rate[cur] || 1),
-      catg: 'Expected payment', kind: 'Expected payments', past: false, dir: 'Out',
-      status: ok ? '✅ Approved — pay by ' + (due ? vwDay(due) : 'soon') : '💡 Found in your messages — approve or reject',
-      tag: ok ? 'planned' : 'found', exKey: what + '|' + (due || ''), source: String(r[1] || '') + ' · ' + String(r[8] || '').slice(0, 90) });
-  });
 
   // Money moves the Now tab asks for.
   m.moves = vwMoves(d);
@@ -426,11 +412,8 @@ function vwNowRows(d) {
 }
 
 function vwNowInfo(d) {
-  var n = vwNowRows(d), worth = '';
-  for (var i = 0; i < Math.min(12, d.big.length); i++) {
-    if (String(d.big[i][2]) === 'Net worth' && d.big[i + 1]) { worth = d.big[i + 1][2]; break; }
-  }
-  return { banks: n.banks, cash: n.total ? n.total.cash : null, spare: n.total ? n.total.spare : null, worth: worth };
+  var n = vwNowRows(d);
+  return { banks: n.banks, cash: n.total ? n.total.cash : null, spare: n.total ? n.total.spare : null };
 }
 
 /** "⚠ Short ₹53,838 → move about $872 from TD Business Chequing by Thu 29 Oct" → a move. */
@@ -554,75 +537,6 @@ function vwRender(ss, p) {
    📒 Ledger
    --------------------------------------------------------------------------- */
 
-function vwLedgerPage(m) {
-  var p = vwPage(VW.LEDGER, '📒 Ledger — everything, folded. Open only what you need.',
-    'Click ➕ on the far left to open a section. 🔴 Needs you is always on top. Amounts in the account\'s own money (₹ for India, $ for Canada); the CAD column and totals in CAD. Rebuilt ' + vwStamp() + '.');
-  var cols = ['', 'Date', 'What', 'Account', 'Amount', 'CAD', 'Status', 'Kind', 'Source / context'];
-  var N = cols.length, today = m.today, in30 = pAddDays(today, VW.NEXT_DAYS);
-  var endLater = pMonthAdd(today.slice(0, 7), VW.LATER_MONTHS);
-  p.rows.push(cols); vwHead(p, 3, N); p.freeze = 4;
-  var sum = function (l) { return l.reduce(function (s, e) { return s + e.cad; }, 0); };
-  var byDate = function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; };
-
-  function item(e) {
-    p.rows.push(['', vwLocalDate(e.date), vwSafe(e.what), vwShort(e.acct), e.amt, e.cad, e.status, e.kind, vwSafe(e.source)]);
-    vwNumFmt(p, p.rows.length - 1, p.rows.length, 4, 5, vwLocalFmt(e.cur));
-    vwNumFmt(p, p.rows.length - 1, p.rows.length, 1, 2, 'ddd d mmm yy');
-  }
-  function header(label, list, depth, bg) {
-    var pad = ['', '   ', '      '][depth] || '';
-    p.rows.push([pad + label + '  (' + list.length + ')', '', '', '', '', sum(list)]);
-    var r = p.rows.length - 1;
-    if (depth === 0) vwStyle(p, r, r + 1, 0, N, { bg: bg, bold: true, size: 12 });
-    else vwStyle(p, r, r + 1, 0, N, { bg: depth === 1 ? VW.C.SUB : null, bold: true, italic: depth === 2 });
-    return p.rows.length;
-  }
-  function section(label, list, bg, inner) {
-    var s = header(label, list, 0, bg);
-    if (inner) inner(list); else list.forEach(item);
-    if (p.rows.length > s) p.groups.push([s, p.rows.length]);
-  }
-  function sub(label, list, depth, inner) {
-    if (!list.length) return;
-    var s = header(label, list, depth || 1);
-    if (inner) inner(list); else list.forEach(item);
-    p.groups.push([s, p.rows.length]);
-  }
-
-  var ev = m.ev;
-  var needs = ev.filter(function (e) { return ['overdue', 'check', 'todo', 'found', 'unknown', 'unpaired', 'label'].indexOf(e.tag) !== -1; });
-  var next = ev.filter(function (e) { return !e.past && e.tag === 'planned' && e.date <= in30; }).sort(byDate);
-  var later = ev.filter(function (e) { return !e.past && e.tag === 'planned' && e.date > in30 && e.date.slice(0, 7) <= endLater; }).sort(byDate);
-  var done = ev.filter(function (e) { return e.past; }).sort(function (a, b) { return -byDate(a, b); });
-
-  section('🔴 NEEDS YOU', needs, VW.C.BAD, function (l) {
-    [['🔴 Overdue', 'overdue'], ['⚠ Check — charged after you cancelled', 'check'], ['⏳ To do now (money moves)', 'todo'],
-     ['💡 Found in your messages — approve or reject on Expected payments', 'found'], ['❔ Can\'t tell yet — upload a newer statement', 'unknown'],
-     ['↔ Transfers that did not match — money that left but never arrived (or the other way)', 'unpaired'],
-     ['🏷 Needs a label — add a Payees rule', 'label']].forEach(function (x) {
-      sub(x[0], l.filter(function (e) { return e.tag === x[1]; }).sort(byDate));
-    });
-  });
-  section('⏳ NEXT ' + VW.NEXT_DAYS + ' DAYS', next, VW.C.WARN);
-  section('🗓 LATER — planned', later, VW.C.LIGHT, function (l) {
-    vwUniq(l.map(function (e) { return e.date.slice(0, 7); })).forEach(function (mo) {
-      sub(pMonthName(mo), l.filter(function (e) { return e.date.slice(0, 7) === mo; }));
-    });
-  });
-  section('✅ DONE — from your statements', done.filter(function (e) { return e.tag === 'done'; }), VW.C.GOOD, function (l) {
-    vwUniq(l.map(function (e) { return e.date.slice(0, 7); })).forEach(function (mo) {
-      var inM = l.filter(function (e) { return e.date.slice(0, 7) === mo; });
-      sub(pMonthName(mo), inM, 1, function (x) {
-        vwUniq(x.map(function (e) { return e.kind; })).sort().forEach(function (k) {
-          sub(k, x.filter(function (e) { return e.kind === k; }), 2);
-        });
-      });
-    });
-  });
-  vwNumFmt(p, 4, p.rows.length, 5, 6, VW_CAD);
-  p.widths = [330, 85, 260, 130, 100, 90, 300, 160, 380];
-  return p;
-}
 
 /** Bank text is shown, never run: a leading = + - @ would make Sheets read a formula. */
 function vwSafe(s) { s = String(s == null ? '' : s); return /^[=+@-]/.test(s) ? "'" + s : s; }
@@ -660,75 +574,6 @@ function vwOpenBudgets(m) {
   return m.open;
 }
 
-function vwSummaryPage(m) {
-  var p = vwPage(VW.SUMMARY, '🗂 Summary — money in and out by month',
-    'Folded: open a country ▸ kind ▸ category ▸ item. India in ₹, Canada in $; the bottom lines are grand totals in CAD. Moves between your own accounts are left out. Rebuilt ' + vwStamp() + '.');
-  var cur = m.today.slice(0, 7), months = [];
-  var first = m.ev.filter(function (e) { return e.past; }).reduce(function (a, e) { return e.date < a ? e.date : a; }, cur).slice(0, 7);
-  for (var k = -VW.PAST_MONTHS; k <= 3; k++) if (pMonthAdd(cur, k) >= first) months.push(pMonthAdd(cur, k));   // nothing before the data starts
-  var label = function (mo) { return mo < cur ? '✅ Actual' : mo === cur ? '⏳ Actual so far + rest planned' : '🗓 Planned'; };
-  var est = vwEstimates(m), rateINR = m.rate.INR || 0.0162;
-  var left = 1 - (+m.today.slice(8, 10)) / pLastDay(cur);
-
-  var pool = m.ev.filter(function (e) { return e.dir !== 'Move' && (e.past || e.tag === 'planned' || e.tag === 'overdue'); })
-    .map(function (e) { return e.tag === 'overdue' ? vwCopy(e, { date: m.today }) : e; });
-  months.filter(function (mo) { return mo >= cur; }).forEach(function (mo) {
-    var f = mo === cur ? left : 1;
-    if (est['🇨🇦 Canada']) pool.push({ date: mo + '-28', what: 'Day-to-day spending (estimate)', acct: 'CAD', amt: est['🇨🇦 Canada'] * f, cur: 'CAD', cad: est['🇨🇦 Canada'] * f, kind: 'Estimates', catg: 'Day-to-day spending — the pace of the last 2 months' });
-    if (est['🇮🇳 India']) pool.push({ date: mo + '-28', what: 'Day-to-day spending (estimate)', acct: 'INR', amt: est['🇮🇳 India'] * f, cur: 'INR', cad: est['🇮🇳 India'] * f * rateINR, kind: 'Estimates', catg: 'Day-to-day spending — the pace of the last 2 months' });
-  });
-  var countryOf = function (e) { return e.acct === 'INR' ? '🇮🇳 India' : e.acct === 'CAD' ? '🇨🇦 Canada' : m.country(e.acct); };
-  var W = 1 + months.length;
-  p.rows.push([''].concat(months.map(function (mo) { return vwTxt(pMonthName(mo)); })));
-  p.rows.push(['Country ▸ Kind ▸ Category ▸ Item'].concat(months.map(label)));
-  vwHead(p, 3, W); vwHead(p, 4, W); p.freeze = 5;
-  months.forEach(function (mo, i) {
-    var l = label(mo);
-    vwStyle(p, 4, 5, 1 + i, 2 + i, { bg: /^✅/.test(l) ? VW.C.DONE_HEAD : /^⏳/.test(l) ? VW.C.HALF_HEAD : VW.C.SECTION, color: VW.C.WHITE, bold: true, wrap: true });
-  });
-  var vals = function (list, f) { return months.map(function (mo) { return vwR(list.filter(function (e) { return e.date.slice(0, 7) === mo; }).reduce(function (s, e) { return s + f(e); }, 0)); }); };
-  var amt = function (e) { return e.amt; };
-
-  ['🇨🇦 Canada', '🇮🇳 India'].forEach(function (cn) {
-    var L = pool.filter(function (e) { return countryOf(e) === cn; });
-    if (!L.length) return;
-    var fmt = cn === '🇮🇳 India' ? VW_INR : VW_CAD;
-    p.rows.push([cn + (cn === '🇮🇳 India' ? '  (₹)' : '  ($)')].concat(vals(L, amt)));
-    var r0 = p.rows.length - 1; vwStyle(p, r0, r0 + 1, 0, W, { bg: VW.C.LIGHT, bold: true, size: 12 }); vwNumFmt(p, r0, r0 + 1, 1, W, fmt);
-    var s1 = p.rows.length;
-    vwUniq(L.map(function (e) { return e.kind; })).sort().forEach(function (kd) {
-      var K = L.filter(function (e) { return e.kind === kd; });
-      p.rows.push(['   ' + kd].concat(vals(K, amt))); var r1 = p.rows.length - 1;
-      vwStyle(p, r1, r1 + 1, 0, 1, { bold: true }); vwNumFmt(p, r1, r1 + 1, 1, W, fmt);
-      var s2 = p.rows.length;
-      vwUniq(K.map(function (e) { return e.catg; })).sort().forEach(function (cg) {
-        var Cg = K.filter(function (e) { return e.catg === cg; });
-        p.rows.push(['      ' + cg].concat(vals(Cg, amt))); vwNumFmt(p, p.rows.length - 1, p.rows.length, 1, W, fmt);
-        var s3 = p.rows.length;
-        vwUniq(Cg.map(function (e) { return e.what; })).forEach(function (w) {
-          p.rows.push(['         ' + w].concat(vals(Cg.filter(function (e) { return e.what === w; }), amt)));
-          var r3 = p.rows.length - 1; vwNumFmt(p, r3, r3 + 1, 1, W, fmt); vwStyle(p, r3, r3 + 1, 0, 1, { color: VW.C.GREY });
-        });
-        p.groups.push([s3, p.rows.length]);
-      });
-      p.groups.push([s2, p.rows.length]);
-    });
-    p.groups.push([s1, p.rows.length]);
-  });
-  var cad = function (e) { return e.cad; };
-  var tin = vals(pool.filter(function (e) { return e.cad > 0; }), cad), tout = vals(pool.filter(function (e) { return e.cad < 0; }), cad);
-  p.rows.push([]);
-  var g = p.rows.length;
-  p.rows.push(['GRAND TOTAL (CAD) — money in'].concat(tin));
-  p.rows.push(['GRAND TOTAL (CAD) — money out'].concat(tout));
-  p.rows.push(['GRAND TOTAL (CAD) — left over'].concat(tin.map(function (v, i) { return v + tout[i]; })));
-  vwNumFmt(p, g, g + 3, 1, W, VW_CAD);
-  vwStyle(p, g, g + 3, 0, W, { bg: VW.C.NAVY, color: VW.C.WHITE, bold: true });
-  // Finished months greyed, so the eye goes to what is still open.
-  months.forEach(function (mo, i) { if (mo < cur) vwStyle(p, 5, g - 1, 1 + i, 2 + i, { bg: VW.C.PAST }); });
-  p.widths = [430].concat(months.map(function () { return 120; }));
-  return p;
-}
 
 function vwCopy(o, extra) { var x = {}; Object.keys(o).forEach(function (k) { x[k] = o[k]; }); Object.keys(extra).forEach(function (k) { x[k] = extra[k]; }); return x; }
 
@@ -914,7 +759,7 @@ function vwHealthChecks(m) {
   var unl = m.ev.filter(function (e) { return e.tag === 'label'; });
   add('3. Every transaction labelled', unl.length ? '⚠' : '✅',
     unl.length ? unl.length + ' without a category · $' + vwR(-unl.reduce(function (s, e) { return s + e.cad; }, 0)).toLocaleString('en-US') + ' net out' : 'All labelled',
-    unl.length ? 'Ledger › 🔴 Needs you › 🏷 — add Payees rules (or ask Claude), then Finance › Re-label unlabelled rows' : '—');
+    unl.length ? 'Money › 🔴 Needs you › 🏷 — add Payees rules (or ask Claude), then Finance › Re-label unlabelled rows' : '—');
 
   var od = m.ev.filter(function (e) { return e.tag === 'overdue' || e.tag === 'check'; });
   add('4. Every bill paid on time', od.length ? '🔴' : '✅',
@@ -925,12 +770,12 @@ function vwHealthChecks(m) {
   add('5. Transfers arrive — every move between your accounts seen on both sides', up.length ? '🔴' : '✅',
     up.length ? up.length + ' not matched: ' + up.slice(0, 6).map(function (e) { return vwShort(e.acct) + ' ' + vwDay(e.date) + ' $' + Math.abs(vwR(e.cad)).toLocaleString('en-US'); }).join(' · ') + (up.length > 6 ? ' …' : '')
       : 'All matched',
-    up.length ? 'Ledger › 🔴 Needs you › ↔ — upload the missing account, or label it "Transfer - untracked account"' : '—');
+    up.length ? 'Money › 🔴 Needs you › ↔ — upload the missing account, or label it "Transfer - untracked account"' : '—');
 
-  var found = m.ev.filter(function (e) { return e.tag === 'found'; });
-  add('6. Payments found in messages decided', found.length ? '⚠' : '✅',
-    found.length ? found.length + ' waiting: ' + found.map(function (e) { return e.what; }).join(' · ') : 'None waiting',
-    found.length ? 'Expected payments tab › Your decision: Approve or Reject' : '—');
+  var waiting = m.cms.filter(function (c) { return !c.income && (!c.decision || /^review$/i.test(c.decision)); });
+  add('6. Every commitment approved', waiting.length ? '⚠' : '✅',
+    waiting.length ? waiting.length + ' waiting: ' + waiting.map(function (c) { return c.name; }).join(' · ') : 'All decided',
+    waiting.length ? 'Commitments › orange rows: choose Keep, Cancel or Later' : '—');
 
   var late = vwTickRows(m).filter(function (t) { return /^⚠/.test(t.seen); });
   add('7. Ticked "done" but not seen in the bank after ' + VW.TICK_WAIT_DAYS + ' days', late.length ? '⚠' : '✅',
@@ -941,18 +786,6 @@ function vwHealthChecks(m) {
   return out;
 }
 
-function vwHealthPage(m) {
-  var p = vwPage(VW.HEALTH, '🩺 Health — can you trust the numbers?', 'All green, or fix the top red line first. Rebuilt ' + vwStamp() + '.');
-  var cols = ['Check', 'Status', 'What it found', 'What to do'];
-  p.rows.push(cols); vwHead(p, 3, 4);
-  vwHealthChecks(m).forEach(function (c) { p.rows.push([c.name, c.ok, c.found, c.todo]); });
-  var n = p.rows.length;
-  p.rules.push({ r0: 4, r1: n, c: 1, starts: '✅', bg: VW.C.GOOD }, { r0: 4, r1: n, c: 1, starts: '⚠', bg: VW.C.WARN }, { r0: 4, r1: n, c: 1, starts: '🔴', bg: VW.C.BAD });
-  vwStyle(p, 4, n, 1, 2, { size: 14 });
-  p.wrapCols = [0, 2, 3];
-  p.widths = [360, 70, 560, 360];
-  return p;
-}
 
 
 /* ---------------------------------------------------------------------------
@@ -985,8 +818,8 @@ function vwTodo(m) {
   m.ev.filter(function (e) { return e.cardPay && e.date <= soon; }).sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (e) {
     out.push({ key: 'cd|' + e.what + '|' + e.date, what: e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + byHow(e) + (/^Pay down/.test(e.what) ? ' — keeps the reported balance under target' : ''), when: 'by ' + vwDay(e.date), cm: e.cmName });
   });
-  var found = m.ev.filter(function (e) { return e.tag === 'found'; }).length;
-  if (found) out.push({ key: 'ex|review', what: 'Approve or reject ' + found + ' payment(s) found in your messages — Expected payments tab', when: 'this week' });
+  var waiting = m.cms.filter(function (c) { return !c.income && (!c.decision || /^review$/i.test(c.decision)); }).length;
+  if (waiting) out.push({ key: 'ex|review', what: 'Decide ' + waiting + ' orange row(s) on Commitments: Keep, Cancel or Later', when: 'this week' });
   if (vwStale(m).length) out.push({ key: 'st|upload', what: 'Upload statements: ' + m.stale.map(function (a) { return vwShort(a.name); }).join(', '), when: 'pay night' });
   m.todo = out;
   return out;
@@ -997,8 +830,7 @@ function vwTickRows(m) {
   if (m.tickRows) return m.tickRows;
   var store = m.d.ticks || {}, today = m.today, todo = vwTodo(m), keys = {};
   todo.forEach(function (t) { keys[t.key] = t; });
-  (m.d.homeRows || []).map(function (r) { return [r[0], r[1], r[6]]; })
-    .concat((m.d.todayRows || []).map(function (r) { return [r[0], r[1], r[7]]; })).forEach(function (r) {
+  (m.d.todayRows || []).map(function (r) { return [r[0], r[1], r[7]]; }).forEach(function (r) {
     var key = String(r[2] || '');
     if (!key || key === 'key') return;
     if (r[0] === true && (!store[key] || store[key].verified)) store[key] = { on: today, what: String(r[1] || '') };
@@ -1038,49 +870,6 @@ function vwProof(m, key) {
   return 'no longer due';
 }
 
-function vwHomePage(m) {
-  var p = vwPage(VW.HOME, '🏠 Home — am I OK, and what do I do next?',
-    'Tick ✔ when you have done something. It stays 🟡 until the bank shows it, then turns ✅ Verified. Rebuilt ' + vwStamp() + ' — after every upload, every morning, and a few minutes after you edit anything.');
-  var checks = vwHealthChecks(m), bad = checks.filter(function (c) { return c.ok !== '✅'; }).length;
-  var low = m.lowest && m.lowest.mo ? '$' + vwR(m.lowest.v).toLocaleString('en-US') + ' in ' + pMonthName(m.lowest.mo) : '—';
-  p.rows.push(['Cash today', 'Spare after the next 14 days', 'Health', 'Lowest cash (12 months)', 'Net worth', 'Unplanned spending / year']);
-  p.rows.push([m.nowInfo.cash, m.nowInfo.spare, bad ? '⚠ ' + bad + ' check(s) need you' : '✅ All good', low, m.nowInfo.worth,
-    vwR(m.unplannedYear || 0)]);
-  vwStyle(p, 3, 4, 0, 6, { color: VW.C.GREY, bg: VW.C.SUB });
-  vwStyle(p, 4, 5, 0, 6, { size: 16, bold: true, color: VW.C.NAVY, bg: VW.C.SUB, wrap: true });
-  vwNumFmt(p, 4, 5, 0, 2, VW_CAD); vwNumFmt(p, 4, 5, 4, 6, VW_CAD);
-  p.rows.push([]);
-  vwBand(p, 6, 6, '👉 DO NOW');
-  p.rows.push(['✔ Done?', 'What', 'When', 'Seen in the bank? (automatic)', 'Status', '', 'key']);
-  vwHead(p, 7, 5);
-  var rows = vwTickRows(m), r0 = p.rows.length;
-  if (!rows.length) p.rows.push(['', 'Nothing to do right now 🎉']);
-  rows.forEach(function (t) {
-    var r = p.rows.length + 1;
-    p.rows.push([t.ticked, vwSafe(t.what), vwTxt(t.when), t.seen,
-      '=IF(LEFT(D' + r + ',1)="✅",D' + r + ',IF(LEFT(D' + r + ',1)="⚠",D' + r + ',IF(A' + r + ',"🟡 You said done — waiting for the bank to show it","⏳ To do")))', '', t.key]);
-  });
-  var r1 = p.rows.length;
-  if (rows.length) {
-    p.checks.push({ r0: r0, r1: r1, c: 0 });
-    p.rules.push({ r0: r0, r1: r1, c: 4, starts: '✅', bg: VW.C.GOOD }, { r0: r0, r1: r1, c: 4, starts: '🟡', bg: VW.C.WARN },
-      { r0: r0, r1: r1, c: 4, starts: '⚠', bg: VW.C.BAD }, { r0: r0, r1: r1, c: 4, starts: '⏳', bg: VW.C.SUB });
-  }
-  p.rows.push([]);
-  var h = p.rows.length;
-  vwBand(p, h, 6, 'HOW "DONE" WORKS');
-  p.rows.push(['1. Do it (transfer / payment), then tick ✔ here → 🟡 "You said done — waiting for the bank".']);
-  p.rows.push(['2. Upload statements (or type a balance on Assets & Debts). When the sheet sees it → ✅ "Verified".']);
-  p.rows.push(['3. Ticked but not seen after ' + VW.TICK_WAIT_DAYS + ' days → ⚠ "Not in the bank yet — check" (Health shows it too).']);
-  p.rows.push(['4. Nothing counts as paid just because you ticked it — the bank has the last word.']);
-  p.rows.push([]);
-  vwBand(p, p.rows.length, 6, 'WHERE TO LOOK');
-  p.rows.push(['📒 Ledger — every payment past and future, folded, attention first  ·  🗂 Summary — month by month, India in ₹  ·  🧠 Habits — planned vs unplanned']);
-  p.rows.push(['🔮 Forecast — 12 months ahead  ·  🩺 Health — can you trust the numbers  ·  Now / Money map — balances and money moves  ·  Commitments, Expected payments, Payees — the lists you edit']);
-  vwStyle(p, h + 1, p.rows.length, 0, 1, { color: '#3c4043' });
-  p.widths = [150, 440, 130, 300, 380, 190];   // column G (key) is hidden
-  return p;
-}
 
 
 /* ---------------------------------------------------------------------------
@@ -1247,10 +1036,10 @@ function vwTodayPage(m) {
   band('ℹ️  How this page works (➕)', C.SUB, C.GREY);
   var i0 = p.rows.length;
   ['Balances: the last statement or the balance you typed on Assets & Debts (the newer wins), plus every transaction since.',
-   'Going out: payments due in the next 14 days from Commitments and approved Expected payments, card bills (what you owe now plus new charges), and HST kept for CRA.',
+   'Going out: payments due in the next 14 days from Commitments, card bills (what you owe now plus new charges), and HST kept for CRA.',
    'Money moves: when an account would go below zero, the account with the most to spare is asked to send the difference before the first payment.',
    'Auto-debits and card charges take themselves — Do now only lists what you must do by hand. A tick waits for the bank before it says ✅.',
-   'Blue tabs are facts (locked). Yellow tabs are yours: Commitments, Expected payments, Assets & Debts, Payees, Categories.'
+   'Blue tabs are facts (locked). Yellow tabs are yours: Commitments, Assets & Debts, Payees.'
   ].forEach(function (t) { p.rows.push(['', t]); p.merges.push([p.rows.length - 1, 1, 1, W - 1]); });
   vwStyle(p, i0, p.rows.length, 1, W, { color: '#3c4043' });
   p.groups.push([i0, p.rows.length]);
@@ -1493,7 +1282,7 @@ function vwWriteInvested(ss, m) {
       v = sum(function (e) { return /wealthsimple/i.test(e.source + ' ' + e.what) && e.kind === 'Saved / invested'; }, cur);
     }
     else if (/gold|jewel/i.test(name)) v = sum(function (e) { return /gold|jewel/i.test(e.catg); }, cur);
-    else if (cls === 'Property' || name === BS.HOUSE) v = sum(function (e) { return m.isHouse(e); }, cur);
+    else if (cls === 'Real estate' || name === BS.HOUSE) v = sum(function (e) { return m.isHouse(e); }, cur);
     if (v === null) return;
     v = Math.round(v * 100) / 100;
     if (Number(r[5]) !== v) sh.getRange(i + 2, 6).setValue(v);
@@ -1533,9 +1322,8 @@ function vwSplitIndiaCash(m) {
    🏛 Net worth — what you own and owe, folded by meaning
    --------------------------------------------------------------------------- */
 
-var VW_CLASS_ORDER = ['Cash & bank', 'Investments', 'Retirement', 'Property', 'Vehicle', 'Money owed to you', 'Other asset'];
-var VW_CLASS_ICON = { 'Cash & bank': '💵', 'Investments': '📈', 'Retirement': '🧓', 'Property': '🏠', 'Vehicle': '🚗',
-                      'Money owed to you': '🤝', 'Other asset': '💍' };
+var VW_CLASS_ORDER = ['Cash', 'Investments', 'Commodities', 'Real estate', 'Money owed to you'];
+var VW_CLASS_ICON = { 'Cash': '💵', 'Investments': '📈', 'Commodities': '💍', 'Real estate': '🏠', 'Money owed to you': '🤝' };
 
 /** The institution an item belongs to: the bank or platform its name starts with. */
 function vwInstitution(name) {
@@ -1561,7 +1349,7 @@ function vwNetWorthPage(m) {
     for (var i = r0 - 1; i < r1 - 1 && i < bs.length; i++) {
       var r = bs[i];
       if (!r || !r[0] || /^Nothing/.test(String(r[0]))) continue;
-      out.push({ name: String(r[0]), cls: String(r[1] || 'Other asset'), from: String(r[2] || ''), asOf: String(r[3] || ''),
+      out.push({ name: String(r[0]), cls: String(r[1] || 'Commodities'), from: String(r[2] || ''), asOf: String(r[3] || ''),
                  amt: vwNum(r[4]), cur: String(r[5] || 'CAD'), cad: vwNum(r[6]) });
     }
     return out;
@@ -1672,6 +1460,197 @@ function vwNetWorthPage(m) {
 }
 
 /* ---------------------------------------------------------------------------
+   📒 Money — every transaction, folded: Needs you, then month ▸ country ▸ category ▸ sub-category
+   --------------------------------------------------------------------------- */
+
+function vwMoneyPage(m) {
+  var p = vwPage(VW.MONEY, '📒 Money — where your money went',
+    'Folded: ➕ opens a month, then Canada / India, then the category and sub-category, then each payment. India in ₹, Canada in $, month lines in CAD. Rebuilt ' + vwStamp() + '.');
+  var C = VW.C, W = 7, cur = m.today.slice(0, 7);
+  p.rows.push(['Item', 'Date', 'Account', 'Amount', 'CAD', 'Status', 'From the bank']);
+  vwHead(p, 3, W); p.freeze = 4;
+  var sum = function (l) { return l.reduce(function (s, e) { return s + e.cad; }, 0); };
+  var byDate = function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; };
+  function tx(e, pad) {
+    var r = p.rows.length;
+    p.rows.push([pad + vwSafe(e.what), vwLocalDate(e.date), vwShort(e.acct), e.amt, e.cad, e.status, vwSafe(e.source)]);
+    vwNumFmt(p, r, r + 1, 3, 4, vwLocalFmt(e.cur)); vwNumFmt(p, r, r + 1, 1, 2, 'ddd d mmm yy'); vwNumFmt(p, r, r + 1, 4, 5, VW_CAD);
+    vwStyle(p, r, r + 1, 5, 7, { color: C.GREY });
+  }
+  function head(label, value, pad, style, fmt, note) {
+    var r = p.rows.length;
+    p.rows.push([pad + label, '', '', fmt ? value : '', fmt ? '' : value, note || '']);
+    vwStyle(p, r, r + 1, 0, W, style);
+    if (fmt) vwNumFmt(p, r, r + 1, 3, 4, fmt); else vwNumFmt(p, r, r + 1, 4, 5, VW_CAD);
+    return p.rows.length;
+  }
+
+  // 🔴 What needs you (bank data problems; what to pay is on Today).
+  var needs = m.ev.filter(function (e) { return ['label', 'unpaired', 'check', 'unknown'].indexOf(e.tag) !== -1; });
+  var s0 = head('🔴  NEEDS YOU  (' + needs.length + ')', sum(needs), '', { bg: C.BAD, bold: true, size: 12 });
+  [['❔ Can\'t tell yet — upload a newer statement', 'unknown'], ['⚠ Charged after you cancelled', 'check'],
+   ['↔ Transfers that did not match', 'unpaired'], ['🏷 No category yet — add a Payees rule', 'label']].forEach(function (x) {
+    var l = needs.filter(function (e) { return e.tag === x[1]; }).sort(byDate);
+    if (!l.length) return;
+    var s = head(x[0] + '  (' + l.length + ')', sum(l), '   ', { bold: true, bg: C.SUB });
+    l.forEach(function (e) { tx(e, '      '); });
+    p.groups.push([s, p.rows.length]);
+  });
+  if (p.rows.length > s0) p.groups.push([s0, p.rows.length]);
+  p.rows.push([]);
+
+  // Months, newest first.
+  var past = m.ev.filter(function (e) { return e.past; });
+  vwUniq(past.map(function (e) { return e.date.slice(0, 7); })).sort().reverse().forEach(function (mo) {
+    var inM = past.filter(function (e) { return e.date.slice(0, 7) === mo; }).sort(byDate);
+    var real = inM.filter(function (e) { return e.kind !== VW.MOVED; });
+    var inn = sum(real.filter(function (e) { return e.cad > 0; })), out = sum(real.filter(function (e) { return e.cad < 0; }));
+    var s1 = head(pMonthName(mo) + (mo === cur ? '  ⏳ so far' : '  ✅'), inn + out, '', { bg: mo === cur ? C.WARN : C.LIGHT, bold: true, size: 12 }, null,
+      'In ' + vwMoneyCad(inn) + '  ·  Out ' + vwMoneyCad(-out) + '  ·  CAD column = left over (moves between your accounts not counted)');
+    ['🇨🇦 Canada', '🇮🇳 India'].forEach(function (cn) {
+      var L = inM.filter(function (e) { return m.country(e.acct) === cn; });
+      if (!L.length) return;
+      var fmt = cn === '🇮🇳 India' ? VW_INR : VW_CAD;
+      var s2 = head(cn + '  (' + L.length + ')', L.filter(function (e) { return e.kind !== VW.MOVED; }).reduce(function (s, e) { return s + e.amt; }, 0), '   ', { bold: true }, fmt);
+      vwUniq(L.map(function (e) { return e.kind; })).sort(function (a, b) {
+        return (a === 'Income' ? -1 : a === VW.MOVED ? 1 : 0) - (b === 'Income' ? -1 : b === VW.MOVED ? 1 : 0) || (a < b ? -1 : 1);
+      }).forEach(function (k) {
+        var K = L.filter(function (e) { return e.kind === k; });
+        var s3 = head(k + '  (' + K.length + ')', K.reduce(function (s, e) { return s + e.amt; }, 0), '      ', { bold: true, bg: C.SUB }, fmt);
+        var cats = vwUniq(K.map(function (e) { return e.catg; })).sort();
+        if (cats.length === 1) K.forEach(function (e) { tx(e, '            '); });
+        else cats.forEach(function (cg) {
+          var Cg = K.filter(function (e) { return e.catg === cg; });
+          var s4 = head(cg + '  (' + Cg.length + ')', Cg.reduce(function (s, e) { return s + e.amt; }, 0), '         ', { italic: true, bold: true }, fmt);
+          Cg.forEach(function (e) { tx(e, '               '); });
+          p.groups.push([s4, p.rows.length]);
+        });
+        p.groups.push([s3, p.rows.length]);
+      });
+      p.groups.push([s2, p.rows.length]);
+    });
+    p.groups.push([s1, p.rows.length]);
+  });
+  p.widths = [420, 90, 130, 100, 90, 330, 360];
+  return p;
+}
+
+function vwMoneyCad(v) { return '$' + Math.abs(vwR(v)).toLocaleString('en-US'); }
+
+
+/* ---------------------------------------------------------------------------
+   Commitments and Assets & Debts: sorted and folded by meaning, in place
+   --------------------------------------------------------------------------- */
+
+/**
+ * These two tabs are typed into, so they are never rebuilt: rows are sorted into sections and
+ * folded where they stand. A section is a row with no name (every reader skips those) and its
+ * title in column B. New rows wait at the bottom until the next tidy. Runs after a deploy and
+ * once at night (02:00–05:59), so it does not move rows while you are typing.
+ */
+function vwTidyInputs(ss) {
+  var props = PropertiesService.getScriptProperties(), now = new Date();
+  var day = Utilities.formatDate(now, CFG_TZ(), 'yyyy-MM-dd'), hour = +Utilities.formatDate(now, CFG_TZ(), 'H');
+  var newCode = props.getProperty('vw_tidy_version') !== PLAN.VERSION;
+  if (!newCode && !(hour >= 2 && hour < 6 && props.getProperty('vw_tidy_day') !== day)) return;
+  vwTidyCommitments(ss);
+  vwTidyAssets(ss);
+  SpreadsheetApp.flush();
+  props.setProperty('vw_tidy_version', PLAN.VERSION);
+  props.setProperty('vw_tidy_day', day);
+}
+
+/** Write the sorted sections to the listed columns, reset the row groups, fold, colour the title rows. */
+function vwWriteSections(sh, sections, cols, titleCol, width) {
+  var total = 0;
+  sections.forEach(function (x) { total += 1 + x.rows.length; });
+  var used = Math.max(sh.getLastRow() - 1, total);
+  if (sh.getMaxRows() < used + 1) sh.insertRowsAfter(sh.getMaxRows(), used + 1 - sh.getMaxRows());
+  // Old groups off.
+  for (var r = 2; r <= used + 1; r++) {
+    var depth = sh.getRowGroupDepth(r);
+    if (depth > 0) sh.getRange(r, 1).shiftRowGroupDepth(-depth);
+  }
+  var blocks = cols.map(function () { return []; }), titles = [], row = 2;
+  sections.forEach(function (x) {
+    titles.push({ row: row, n: x.rows.length, title: x.title });
+    blocks.forEach(function (b, k) { b.push(cols[k].map(function (c, i) { return c === titleCol ? x.title : ''; })); });
+    x.rows.forEach(function (rw) { blocks.forEach(function (b, k) { b.push(cols[k].map(function (c) { return rw[c - 1]; })); }); });
+    row += 1 + x.rows.length;
+  });
+  cols.forEach(function (list, k) {
+    var rg = sh.getRange(2, list[0], used, list.length);
+    rg.clearContent();
+    rg.setBackground(null).setFontWeight('normal');
+    sh.getRange(2, list[0], blocks[k].length, list.length).setValues(blocks[k]);
+  });
+  titles.forEach(function (t) {
+    sh.getRange(t.row, 1, 1, width).setBackground(TH.HEAD).setFontWeight('bold').setFontColor(TH.NAVY);
+    if (t.n) sh.getRange(t.row + 1, 1, t.n, 1).shiftRowGroupDepth(1);
+  });
+  sh.setRowGroupControlPosition(SpreadsheetApp.GroupControlTogglePosition.BEFORE);
+  sh.collapseAllRowGroups();
+  return titles;
+}
+
+function vwTidyCommitments(ss) {
+  var sh = getTab(ss, PLAN.TAB_COMMIT), cat = getTab(ss, FX.CATS);
+  if (!sh || !cat || sh.getLastRow() < 2) return;
+  var W = PLAN.CARD_COL + 2, all = sh.getRange(2, 1, sh.getLastRow() - 1, W).getValues();
+  var group = {}, counts = {};
+  cat.getRange(2, 1, cat.getLastRow() - 1, 3).getValues().forEach(function (r) { group[String(r[0]).trim()] = String(r[1]); counts[String(r[0]).trim()] = String(r[2]); });
+  var order = ['Income', 'Bills & loans', 'Essentials', 'Personal subscriptions', 'Business costs', 'Fees & charges'];
+  var buckets = {}, houseName = '';
+  all.forEach(function (r) {
+    if (!String(r[0]).trim()) return;
+    var c = String(r[7]).trim(), g;
+    if (/^(cancel|later)$/i.test(String(r[8]))) g = '✂ Cancelled or parked';
+    else if (/^creditcard$/i.test(c)) g = '💳 Credit cards';
+    else if (counts[c] === 'House') { g = group[c]; houseName = g; }
+    else g = group[c] || 'Other';
+    (buckets[g] = buckets[g] || []).push(r);
+  });
+  var names = order.concat(houseName ? [houseName] : [], ['💳 Credit cards'],
+    Object.keys(buckets).filter(function (k) { return order.indexOf(k) === -1 && k !== houseName && k !== '💳 Credit cards' && k !== '✂ Cancelled or parked'; }), ['✂ Cancelled or parked']);
+  var dueOf = function (r) { var n = parseInt(r[5], 10); return isNaN(n) ? 99 : n; };
+  var sections = names.filter(function (k) { return buckets[k]; }).map(function (k) {
+    return { title: k + '  (' + buckets[k].length + ')', rows: buckets[k].sort(function (a, b) { return dueOf(a) - dueOf(b); }) };
+  });
+  // A–L = yours, AC–AD = how it is paid + advice, AF–AH = card settings. Formula columns are not moved.
+  var list = function (a, b) { var o = []; for (var i = a; i <= b; i++) o.push(i); return o; };
+  vwWriteSections(sh, sections, [list(1, 12), list(PLAN.HOW_COL, PLAN.HOW_COL + 1), list(PLAN.CARD_COL, PLAN.CARD_COL + 2)], 2, 12);
+  fxCommitFormulas(sh);
+}
+
+function vwTidyAssets(ss) {
+  var sh = getTab(ss, BS.TAB_INPUT);
+  if (!sh || sh.getLastRow() < 2) return;
+  var all = sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues();
+  var order = ['💵 Cash', '📈 Investments', '💍 Commodities', '🏠 Real estate', '🤝 Money owed to you', '🔴 Debts'];
+  var label = { 'Cash': order[0], 'Investments': order[1], 'Commodities': order[2], 'Real estate': order[3], 'Money owed to you': order[4] };
+  var buckets = {};
+  all.forEach(function (r) {
+    if (!String(r[0]).trim()) return;
+    var g = String(r[1]) === 'Debt' ? order[5] : (label[String(r[2])] || order[0]);
+    (buckets[g] = buckets[g] || []).push(r);
+  });
+  var sections = [{ title: '📊 Totals', rows: [] }].concat(order.filter(function (k) { return buckets[k]; }).map(function (k) {
+    return { title: k, rows: buckets[k].sort(function (a, b) { return String(a[0]) < String(b[0]) ? -1 : 1; }) };
+  }));
+  var titles = vwWriteSections(sh, sections, [[1, 2, 3, 4, 5, 6, 7, 8]], 2, 12);
+  // Live totals beside each section title. J = what each row is worth now, in CAD.
+  var sign = {};
+  titles.forEach(function (t, i) {
+    if (!i) return;
+    sh.getRange(t.row, 11).setFormula('=SUM(J' + (t.row + 1) + ':J' + (t.row + t.n) + ')').setNumberFormat('$#,##0');
+    sign[t.title] = t.row;
+  });
+  var rows = function (test) { return titles.filter(function (t, i) { return i && test(t.title); }).map(function (t) { return 'K' + t.row; }).join('+') || '0'; };
+  var own = rows(function (x) { return x !== order[5]; }), owe = rows(function (x) { return x === order[5]; });
+  sh.getRange(titles[0].row, 3).setFormula('="Own "&TEXT(' + own + ',"$#,##0")&"   ·   Owe "&TEXT(' + owe + ',"$#,##0")&"   ·   Net worth "&TEXT(' + own + '-(' + owe + '),"$#,##0;-$#,##0")');
+}
+
+/* ---------------------------------------------------------------------------
    Housekeeping
    --------------------------------------------------------------------------- */
 
@@ -1691,12 +1670,11 @@ function vwProtectTransactions(ss) {
  */
 var VW_LOCK = '🔒 Finance Engine — facts, worked out by the sheet';
 var VW_FACT_TABS = {            // whole tab locked, except these columns (yours on a fact page)
-  '🏠 Today': ['A'], '🏛 Net worth': [], '🏠 Home': ['A'], '📒 Ledger': [], '🗂 Summary': [], '🧠 Habits': ['G'], '🔮 Forecast': [], '🩺 Health': [],
-  'Now': [], 'Balance Sheet': [],
-  'Dashboard': [], 'Overview': [], 'Trends': [], 'Accounts': [], 'To label': []
+  '🏠 Today': ['A'], '📒 Money': [], '🧠 Habits': ['G'], '🔮 Forecast': [], '🏛 Net worth': [],
+  'Now': [], 'Balance Sheet': [], 'Dashboard': []
 };
 var VW_INPUT_TABS = {           // your tabs: only the formula / Claude columns are locked
-  'Commitments': ['M2:AB', 'AD2:AE'], 'Expected payments': ['M2:N'], 'Assets & Debts': ['I2:I'],
+  'Commitments': ['M2:AB', 'AD2:AE'], 'Assets & Debts': ['I2:L'],
   'Categories': ['E2:F4'], 'Payees': []   // E8:F8 (HST rate) stays yours
 };
 var VW_TAB_COLOUR = { fact: '#1a73e8', input: '#f9ab00', raw: '#9aa0a6' };
@@ -1757,7 +1735,7 @@ function vwArrangeTabs(ss) {
     ss.setActiveSheet(sh);
     ss.moveActiveSheet(i + 1);
   });
-  var first = getTab(ss, VW.TODAY) || getTab(ss, VW.HOME);
+  var first = getTab(ss, VW.TODAY);
   if (first) ss.setActiveSheet(first);
 }
 

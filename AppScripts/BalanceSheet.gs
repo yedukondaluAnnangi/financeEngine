@@ -28,17 +28,16 @@ var BS = {
   // Column letters of the Assets & Debts tab (I = CAD, a formula). Amount invested is filled in by
   // the script for Wealthsimple, gold and the house (from your transactions); type it for the rest.
   C: { value: 'E', invested: 'F', asof: 'G', notes: 'H', cad: 'I' },
-  ASSET_CLASSES: ['Cash & bank', 'Investments', 'Retirement', 'Property', 'Vehicle', 'Money owed to you', 'Other asset'],
+  ASSET_CLASSES: ['Cash', 'Investments', 'Commodities', 'Real estate', 'Money owed to you'],
   DEBT_CLASSES: ['Home loan', 'Personal loan', 'Credit card', 'Tax owed', 'Money you owe', 'Other debt'],
   ROWS: 28,                 // room in each list on the Balance Sheet
   HOUSE: 'House + land (India)',
   SEED: [
     ['Wealthsimple', 'Asset', 'Investments', 'CAD', '', '', '', 'Total value from the Wealthsimple app.'],
-    ['RBC Chequing ••1324', 'Asset', 'Cash & bank', 'CAD', '', '', '', 'Its CSV has no balance — type today\'s balance from the RBC app.'],
-    ['CIBC Chequing 73-83096', 'Asset', 'Cash & bank', 'CAD', '', '', '', 'Its CSV has no balance — type today\'s balance from the CIBC app.'],
-    ['Cash in hand', 'Asset', 'Cash & bank', 'CAD', '', '', '', 'Optional.'],
-    ['Car', 'Asset', 'Vehicle', 'CAD', '', '', '', 'Optional: what it would sell for today.'],
-    ['Gold / jewellery', 'Asset', 'Other asset', 'INR', '', '', '', 'Optional: today\'s value.'],
+    ['RBC Chequing ••1324', 'Asset', 'Cash', 'CAD', '', '', '', 'Its CSV has no balance — type today\'s balance from the RBC app.'],
+    ['CIBC Chequing 73-83096', 'Asset', 'Cash', 'CAD', '', '', '', 'Its CSV has no balance — type today\'s balance from the CIBC app.'],
+    ['Cash in hand', 'Asset', 'Cash', 'CAD', '', '', '', 'Optional.'],
+    ['Gold / jewellery', 'Asset', 'Commodities', 'INR', '', '', '', 'Optional: today\'s value.'],
     ['HDFC home loan — balance owed', 'Debt', 'Home loan', 'INR', '', '', '', 'Outstanding principal from the HDFC loan statement (not EMIs × months).'],
     ['Kotak Mahindra loan — balance owed', 'Debt', 'Personal loan', 'INR', '', '', '', 'Outstanding principal from the Kotak loan statement.']
   ]
@@ -58,6 +57,15 @@ function bsInputTab(ss) {
   }
   var rows = sh.getMaxRows() - 1;
   sh.getRange('I1').setFormula('={"CAD";ARRAYFORMULA(IF(E2:E="","",E2:E*' + BS_RATE('D2:D') + '))}');
+  // J: what each row is worth now, in CAD. Banks and cards follow their live balance, the house its cost until a value is typed.
+  var nowRows = pgNowRows(pgAccounts().banks.length);
+  sh.getRange('J1').setFormula('={"Now (CAD)";ARRAYFORMULA(IF(A2:A="","",IFNA(VLOOKUP(A2:A,\'' + PG.TAB_NOW + '\'!$A$' + nowRows.b0 + ':$D$' + nowRows.bEnd + ',4,0),' +
+    'IFNA(VLOOKUP(A2:A,Dashboard!$A$54:$B$57,2,0),IF((E2:E="")*ISNUMBER(F2:F),F2:F*IFERROR(VLOOKUP(D2:D,Categories!$E:$F,2,0),1),I2:I)))))}');
+  sh.getRange(1, 11, 1, 2).setValues([['Category total (CAD)', 'Gain / loss']]);
+  sh.getRange('L2').setFormula('=ARRAYFORMULA(IF((A2:A<>"")*ISNUMBER(E2:E)*ISNUMBER(F2:F),E2:E-F2:F,""))');
+  thHeader(sh.getRange(1, 10, 1, 3), TH.CALC_HEAD);
+  sh.getRange(2, 10, rows, 2).setNumberFormat('$#,##0');
+  sh.getRange(2, 12, rows, 1).setNumberFormat('#,##0.00;[Red]-#,##0.00');
   var list = function (vals) { return SpreadsheetApp.newDataValidation().requireValueInList(vals, true).setAllowInvalid(true).build(); };
   sh.getRange(2, 2, rows, 1).setDataValidation(list(['Asset', 'Debt']));
   sh.getRange(2, 3, rows, 1).setDataValidation(list(BS.ASSET_CLASSES.concat(BS.DEBT_CLASSES)));
@@ -173,7 +181,7 @@ function bsViewTab(ss) {
   var nowA = NOW + 'A' + L.b0 + ':A' + L.bEnd, nowB = NOW + 'B' + L.b0 + ':B' + L.bEnd, nowC = NOW + 'C' + L.b0 + ':C' + L.bEnd;
   var bank = 'LET(k,FILTER(HSTACK(' + nowA + ',' + nowB + ',' + nowC + '),' + nowA + '<>"",ISNUMBER(' + nowB + ')),acc,INDEX(k,,1),amt,INDEX(k,,2),' +
     'cur,MAP(acc,LAMBDA(x,IFERROR(INDEX(FILTER(_Calc!G2:G,_Calc!C2:C=x),1),"CAD"))),' +
-    'HSTACK(acc,MAP(acc,LAMBDA(x,"Cash & bank")),MAP(acc,LAMBDA(x,"Balance + later transactions")),' +
+    'HSTACK(acc,MAP(acc,LAMBDA(x,"Cash")),MAP(acc,LAMBDA(x,"Balance + later transactions")),' +
     'MAP(INDEX(k,,3),LAMBDA(d,IF(ISNUMBER(d),TEXT(d,"yyyy-mm-dd"),""))),amt,cur,' +
     'MAP(amt,cur,LAMBDA(v,c,v*' + BS_RATE('c') + '))))';
   // Until its value is typed on Assets & Debts (a row with this name), the house counts at what it cost.
@@ -182,7 +190,7 @@ function bsViewTab(ss) {
   var hRow = 'FILTER(' + IN + BS.C.invested + '2:' + BS.C.invested + ',' + IN + 'A2:A="' + BS.HOUSE + '",' + IN + BS.C.invested + '2:' + BS.C.invested + '<>"")';
   var hCur = 'INDEX(FILTER(' + IN + 'D2:D,' + IN + 'A2:A="' + BS.HOUSE + '"),1)';
   var house = 'LET(v,IFERROR(INDEX(' + hRow + ',1)*' + BS_RATE(hCur) + ',SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"House")),n,"' + BS.HOUSE + '",' +
-    'IF(AND(v>0,' + notMine('n') + '),{n,"Property","Your transactions",' + latest + ',v,"CAD",v},{"","","","","","",""}))';
+    'IF(AND(v>0,' + notMine('n') + '),{n,"Real estate","Your transactions",' + latest + ',v,"CAD",v},{"","","","","","",""}))';
   var lent = 'LET(v,SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Lent"),n,"Money lent to others (net)",' +
     'IF(AND(v>0,' + notMine('n') + '),{n,"Money owed to you","Your transactions",' + latest + ',v,"CAD",v},{"","","","","","",""}))';
   sh.getRange(a0, 1).setFormula('=IFERROR(ARRAY_CONSTRAIN(LET(lst,VSTACK(IFERROR(' + bank + ',{"","","","","","",""}),' + house + ',' + lent + ',' + mine('Asset') + '),' +
