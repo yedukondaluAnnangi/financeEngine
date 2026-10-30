@@ -19,7 +19,7 @@
  */
 
 var VW = {
-  HOME: '🏠 Home', TODAY: '🏠 Today', LEDGER: '📒 Ledger', SUMMARY: '🗂 Summary',
+  HOME: '🏠 Home', TODAY: '🏠 Today', NETWORTH: '🏛 Net worth', LEDGER: '📒 Ledger', SUMMARY: '🗂 Summary',
   HABITS: '🧠 Habits', FORECAST: '🔮 Forecast', HEALTH: '🩺 Health',
   NEXT_DAYS: 30,          // ⏳ Next 30 days
   LATER_MONTHS: 3,        // 🗓 Later runs to the end of this many months ahead
@@ -32,7 +32,7 @@ var VW = {
   MIN_GAP_MIN: 10,        // at most one edit-driven rebuild per this many minutes
   TIME_BUDGET_MS: 200000, // a poll stops writing pages after this, and the next poll carries on
   // 'finish' = locks + tab order: right after Today, and again at the end for the pages rebuilt since.
-  RENDER_ORDER: ['today', 'finish', 'forecast', 'habits', 'summary', 'ledger', 'finish'],   // Home + Health live inside Today
+  RENDER_ORDER: ['today', 'networth', 'finish', 'forecast', 'habits', 'summary', 'ledger', 'finish'],   // Home + Health live inside Today
   PAIR_BEFORE: 2,         // a transfer may land this many days before it leaves (bank dating)…
   PAIR_AFTER: 7,          // …or this many after (Remitly, e-transfers)
   PAIR_SLACK: 0.08,       // amounts may differ this much (exchange rate, fees)
@@ -41,7 +41,8 @@ var VW = {
   HOURLY_NOTE: /\b\d+(\.\d+)?\s*h\b/i,   // Commitments notes like "37.5 h × $…" = paid by the hour
   HOURLY_LAG: 11,         // a Friday payday pays the Mon–Fri week that started this many days before
   MOVED: 'Moved between your accounts',
-  TAB_ORDER: ['🏠 Today', '🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', 'Money map', 'Big picture',
+  HOUSE_CASH: 'Construction - labour (cash)',   // India ATM cash beyond the parents' share
+  TAB_ORDER: ['🏠 Today', '🏠 Home', '📒 Ledger', '🗂 Summary', '🧠 Habits', '🔮 Forecast', '🩺 Health', 'Now', 'Money map', 'Big picture', '🏛 Net worth',
               'Expected payments', 'Commitments', 'Assets & Debts', 'Balance Sheet', 'Categories', 'Transactions', 'Payees'],
   OLD_TABS_2: ['🏠 Home', '🩺 Health', 'Now', 'Money map', 'Balance Sheet', 'Categories'],   // Transactions + Payees stay, last
   OLD_TABS: ['Overview', 'Dashboard', 'Trends', 'Accounts', 'To label', 'Summary', 'Month Ahead', 'CarInsurance', 'Sheet4', '_Peek'],
@@ -121,7 +122,7 @@ function vwRefresh() {
   // Every page is worked out (cheap — some read numbers from others), then written in order.
   var built = {
     ledger: vwLedgerPage(m), summary: vwSummaryPage(m), habits: vwHabitsPage(m), forecast: vwForecastPage(m),
-    health: vwHealthPage(m), home: vwHomePage(m), today: vwTodayPage(m)
+    health: vwHealthPage(m), home: vwHomePage(m), today: vwTodayPage(m), networth: vwNetWorthPage(m)
   };
   var pending = JSON.parse(props.getProperty('vw_pending') || 'null') || VW.RENDER_ORDER.slice();
   while (pending.length) {
@@ -178,6 +179,7 @@ function vwRead(ss) {
     homeRows: home.v, habitRows: habits.v, todayRows: today.v,
     cards: dash.slice(53, 57).filter(function (r) { return r[0]; }).map(function (r) { return { name: String(r[0]), owedCad: vwNum(r[1]) }; }),
     adRows: ad.slice(1),
+    bsRows: vwValues(ss, BS.TAB_VIEW).v,
     lastRun: runs.length < 2 ? '' : runs[runs.length - 1][0] instanceof Date
       ? Utilities.formatDate(runs[runs.length - 1][0], CFG_TZ(), 'EEE d MMM, HH:mm') : String(runs[runs.length - 1][0]),
     accounts: CFG.ACCOUNTS.filter(function (a, i, all) {
@@ -197,13 +199,16 @@ function vwRead(ss) {
 
 function vwModel(d) {
   var today = d.today, m = { today: today, d: d };
-  var group = {}, rate = { CAD: 1 };
+  var group = {}, counts = {}, rate = { CAD: 1 };
   Object.keys(CFG.FX_TO_CAD).forEach(function (k) { rate[k] = CFG.FX_TO_CAD[k]; });
   d.cat.slice(1).forEach(function (r) {
-    if (r[0]) group[String(r[0]).trim()] = String(r[1] || '').trim();
+    if (r[0]) { group[String(r[0]).trim()] = String(r[1] || '').trim(); counts[String(r[0]).trim()] = String(r[2] || '').trim(); }
+    if (/^parents.*cash/i.test(String(r[4] || '')) && vwNum(r[5])) m.parentsCash = vwNum(r[5]);
     if (r[4] && vwNum(r[5])) rate[String(r[4]).trim()] = vwNum(r[5]);
   });
   m.rate = rate;
+  m.countsOf = function (cat) { return counts[String(cat || '').trim()] || ''; };
+  m.isHouse = function (e) { return m.countsOf(e.catg) === 'House'; };
   m.groupOf = function (cat) { cat = String(cat || '').trim(); return cat ? (group[cat] || planGroup(cat, -1)) : 'Not labelled yet'; };
   var curOf = {}; d.accounts.forEach(function (a) { curOf[a.name] = a.cur; });
   m.curOf = function (acct) { return curOf[acct] || (/HDFC/i.test(acct) ? 'INR' : 'CAD'); };
@@ -237,6 +242,8 @@ function vwModel(d) {
       status: unl ? '🏷 Needs a label' : '✅ Done', tag: unl ? 'label' : 'done',
       dir: kind === VW.MOVED ? 'Move' : cad >= 0 ? 'In' : 'Out', source: 'Statement · ' + String(r[4] || '').slice(0, 60) });
   });
+
+  vwSplitIndiaCash(m);
 
   // Future: recurring payments (Commitments), with what the sheet already knows about them.
   var horizon = pMonthAdd(today.slice(0, 7), VW.FORECAST_MONTHS) + '-' + pLastDay(pMonthAdd(today.slice(0, 7), VW.FORECAST_MONTHS));
@@ -638,7 +645,7 @@ function vwEstimates(m) {
     if (!e.past || e.cad >= 0 || full.indexOf(e.date.slice(0, 7)) === -1) return;
     if (VW.NOT_SPENDING.indexOf(e.kind) !== -1 || recurring[e.catg]) return;
     // The house is a project: only signed contract instalments (Commitments rows) are planned, never a monthly pace.
-    if (e.kind === 'House construction') return;
+    if (m.isHouse(e)) return;
     est[m.country(e.acct)] += e.amt / full.length;
   });
   m.est = est;
@@ -648,7 +655,7 @@ function vwEstimates(m) {
 /** One-off Commitments parked as "Later" with an amount: budgets whose dates are not known yet. */
 function vwOpenBudgets(m) {
   if (!m.open) m.open = m.cms.filter(function (c) {
-    return /^later$/i.test(c.decision) && /^one-off$/i.test(c.freq) && c.amount > 0 && m.groupOf(c.cat) === 'House construction';
+    return /^later$/i.test(c.decision) && /^one-off$/i.test(c.freq) && c.amount > 0 && m.countsOf(c.cat) === 'House';
   }).map(function (c) { return { name: c.name, amount: c.amount, cur: c.cur, cad: c.cad, notes: c.notes, kind: 'House construction' }; });
   return m.open;
 }
@@ -737,7 +744,7 @@ function vwHabitsPage(m) {
   var limits = vwLimits(m);
   var spend = m.ev.filter(function (e) { return e.past && e.cad < 0 && months.indexOf(e.date.slice(0, 7)) !== -1; });
   var unplanned = function (e) { return VW.UNPLANNED_GROUPS.indexOf(e.kind) !== -1 || VW.UNPLANNED_CATS.indexOf(e.catg) !== -1; };
-  var planned = function (e) { return !unplanned(e) && VW.PLANNED_GROUPS.indexOf(e.kind) !== -1; };
+  var planned = function (e) { return !unplanned(e) && (VW.PLANNED_GROUPS.indexOf(e.kind) !== -1 || m.isHouse(e)); };
   p.rows.push([''].concat(months.map(function (mo) { return vwTxt(pMonthName(mo) + (mo === cur ? ' (so far)' : '')); }), ['Per month (avg)', 'Per year', '🎯 Your limit / month', 'vs limit', 'key']));
   vwHead(p, 3, 8); p.freeze = 4;
 
@@ -1481,14 +1488,149 @@ function vwWriteInvested(ss, m) {
   };
   rows.forEach(function (r, i) {
     var name = String(r[0] || ''), cls = String(r[2] || ''), cur = String(r[3] || 'CAD') || 'CAD', v = null;
-    if (/wealthsimple/i.test(name)) v = sum(function (e) { return /wealthsimple/i.test(e.source + ' ' + e.what) && e.kind === 'Saved / invested'; }, cur);
+    if (/wealthsimple/i.test(name)) {
+      if (rows.filter(function (x) { return /wealthsimple/i.test(String(x[0])); }).length > 1) return;   // per account: typed from the app
+      v = sum(function (e) { return /wealthsimple/i.test(e.source + ' ' + e.what) && e.kind === 'Saved / invested'; }, cur);
+    }
     else if (/gold|jewel/i.test(name)) v = sum(function (e) { return /gold|jewel/i.test(e.catg); }, cur);
-    else if (cls === 'Property' || name === BS.HOUSE) v = sum(function (e) { return e.kind === 'House construction'; }, cur);
+    else if (cls === 'Property' || name === BS.HOUSE) v = sum(function (e) { return m.isHouse(e); }, cur);
     if (v === null) return;
     v = Math.round(v * 100) / 100;
     if (Number(r[5]) !== v) sh.getRange(i + 2, 6).setValue(v);
     if (!sh.getRange(i + 2, 6).getNote()) sh.getRange(i + 2, 6).setNote('Automatic — the sum of these payments in your transactions.');
   });
+}
+
+/**
+ * India ATM cash has two jobs: the parents' household (the first m.parentsCash rupees a month,
+ * from the Categories tab) and paying workers at the house (the rest). The raw rows stay as they
+ * are; the pages see a withdrawal split into "Parents household (cash)" and house labour.
+ */
+function vwSplitIndiaCash(m) {
+  if (!(m.parentsCash > 0)) return;
+  var cash = m.ev.filter(function (e) { return e.past && e.catg === 'Cash' && e.cur === 'INR' && e.amt < 0; })
+    .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  var left = {}, add = [];
+  cash.forEach(function (e) {
+    var mo = e.date.slice(0, 7);
+    if (left[mo] === undefined) left[mo] = m.parentsCash;
+    var parents = Math.min(-e.amt, left[mo]), house = -e.amt - parents, k = e.cad / e.amt;
+    left[mo] -= parents;
+    if (house > 0) {
+      var h = vwCopy(e, { amt: -house, cad: -house * k, catg: VW.HOUSE_CASH, kind: m.groupOf(VW.HOUSE_CASH),
+        what: e.what + ' — house workers', source: e.source + ' · beyond the parents\' ₹' + m.parentsCash.toLocaleString('en-IN') + ' this month' });
+      add.push(h);
+    }
+    if (parents > 0) { e.amt = -parents; e.cad = -parents * k; e.catg = 'Parents household (cash)'; e.kind = m.groupOf(e.catg); e.what = e.what + ' — parents'; }
+    else { e.skip = true; }
+  });
+  // In place: vwModel keeps adding to this same list after the split.
+  for (var i = m.ev.length - 1; i >= 0; i--) if (m.ev[i].skip) m.ev.splice(i, 1);
+  add.forEach(function (x) { m.ev.push(x); });
+}
+
+/* ---------------------------------------------------------------------------
+   🏛 Net worth — what you own and owe, folded by meaning
+   --------------------------------------------------------------------------- */
+
+var VW_CLASS_ORDER = ['Cash & bank', 'Investments', 'Retirement', 'Property', 'Vehicle', 'Money owed to you', 'Other asset'];
+var VW_CLASS_ICON = { 'Cash & bank': '💵', 'Investments': '📈', 'Retirement': '🧓', 'Property': '🏠', 'Vehicle': '🚗',
+                      'Money owed to you': '🤝', 'Other asset': '💍' };
+
+/** The institution an item belongs to: the bank or platform its name starts with. */
+function vwInstitution(name) {
+  var mm = String(name).match(/^(TD|RBC|CIBC|HDFC|Neo|Wealthsimple|Kotak|GM Financial)\b/i);
+  if (mm) return mm[1].replace(/^neo$/i, 'Neo').replace(/^wealthsimple$/i, 'Wealthsimple');
+  if (/HST|CRA/i.test(name)) return 'CRA';
+  return String(name);
+}
+
+function vwNetWorthPage(m) {
+  var p = vwPage(VW.NETWORTH, '🏛 Net worth — what you own and what you owe, by meaning',
+    'Folded: ➕ opens a class, then the bank or platform, then each account. Values from Assets & Debts and your statements; ' +
+    'Invested = what you put in, Gain = value − invested. Type values on the Assets & Debts tab. Rebuilt ' + vwStamp() + '.');
+  var C = VW.C, W = 8, L = bsLayout(), bs = m.d.bsRows || [];
+  var invested = {}, adCur = {};
+  (m.d.adRows || []).forEach(function (r) {
+    if (!r[0]) return;
+    adCur[String(r[0])] = String(r[3] || '');
+    if (r[5] !== '' && r[5] !== null && !isNaN(Number(r[5]))) invested[String(r[0])] = Number(r[5]);
+  });
+  var read = function (r0, r1) {
+    var out = [];
+    for (var i = r0 - 1; i < r1 - 1 && i < bs.length; i++) {
+      var r = bs[i];
+      if (!r || !r[0] || /^Nothing/.test(String(r[0]))) continue;
+      out.push({ name: String(r[0]), cls: String(r[1] || 'Other asset'), from: String(r[2] || ''), asOf: String(r[3] || ''),
+                 amt: vwNum(r[4]), cur: String(r[5] || 'CAD'), cad: vwNum(r[6]) });
+    }
+    return out;
+  };
+  var assets = read(L.a0, L.aTot), debts = read(L.d0, L.dTot);
+  var sum = function (l) { return l.reduce(function (s, x) { return s + x.cad; }, 0); };
+  var own = sum(assets), owe = sum(debts);
+  var money = function (v, cur) { return v; };
+
+  // Tiles.
+  var t0 = p.rows.length;
+  p.rows.push(['', 'What you own', 'What you owe', '', 'Net worth', '', '']);
+  p.rows.push(['', own, owe, '', own - owe, '', '']);
+  [[t0, 2], [t0 + 1, 2], [t0, 4], [t0 + 1, 4]].forEach(function (x) { p.merges.push([x[0], x[1], 1, 2]); });
+  vwStyle(p, t0, t0 + 2, 1, 7, { bg: C.SUB });
+  vwStyle(p, t0, t0 + 1, 1, 7, { color: C.GREY, bold: true });
+  vwStyle(p, t0 + 1, t0 + 2, 1, 7, { size: 20, bold: true, color: C.NAVY });
+  vwNumFmt(p, t0 + 1, t0 + 2, 1, 7, VW_CAD);
+  p.heights[t0 + 1] = 46;
+  p.rows.push([]);
+  p.rows.push(['', 'Item', 'Value', 'Value (CAD)', 'Invested', 'Gain / loss', 'As of', 'Where the value comes from']);
+  vwHead(p, p.rows.length - 1, W);
+
+  function item(x, depth) {
+    var r = p.rows.length, inv = invested[x.name], gain = inv !== undefined && x.amt ? x.amt - inv : '';
+    p.rows.push(['', '            ' + x.name, x.amt, x.cad, inv !== undefined ? inv : '', gain, x.asOf, x.from]);
+    var f = x.cur === 'INR' ? VW_INR : VW_CAD2;
+    vwNumFmt(p, r, r + 1, 2, 3, f); vwNumFmt(p, r, r + 1, 3, 4, VW_CAD); vwNumFmt(p, r, r + 1, 4, 6, f);
+    vwStyle(p, r, r + 1, 6, 8, { color: C.GREY });
+  }
+  function block(label, list, groupOf, order, bg, byInst) {
+    var r = p.rows.length;
+    p.rows.push(['', label, '', sum(list)]);
+    vwStyle(p, r, r + 1, 0, W, { bg: bg, bold: true, size: 12 }); vwNumFmt(p, r, r + 1, 3, 4, VW_CAD); p.heights[r] = 30;
+    var s0 = p.rows.length;
+    var keys = vwUniq(list.map(groupOf));
+    if (order) keys.sort(function (a, b) { return (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99); });
+    keys.forEach(function (k) {
+      var inK = list.filter(function (x) { return groupOf(x) === k; }), kr = p.rows.length;
+      p.rows.push(['', '   ' + (VW_CLASS_ICON[k] ? VW_CLASS_ICON[k] + '  ' : '') + k + '  (' + inK.length + ')', '', sum(inK)]);
+      vwStyle(p, kr, kr + 1, 1, W, { bold: true, bg: C.LIGHT }); vwNumFmt(p, kr, kr + 1, 3, 4, VW_CAD);
+      var s1 = p.rows.length;
+      if (!byInst) { inK.forEach(function (x) { item(x); }); p.groups.push([s1, p.rows.length]); return; }
+      vwUniq(inK.map(function (x) { return vwInstitution(x.name); })).forEach(function (inst) {
+        var inI = inK.filter(function (x) { return vwInstitution(x.name) === inst; });
+        if (inI.length === 1) { item(inI[0]); return; }   // one account: nothing to fold
+        var ir = p.rows.length;
+        p.rows.push(['', '      ' + inst + '  (' + inI.length + ')', '', sum(inI)]);
+        vwStyle(p, ir, ir + 1, 1, 2, { bold: true }); vwNumFmt(p, ir, ir + 1, 3, 4, VW_CAD);
+        var s2 = p.rows.length;
+        inI.forEach(function (x) { item(x); });
+        p.groups.push([s2, p.rows.length]);
+      });
+      p.groups.push([s1, p.rows.length]);
+    });
+    p.groups.push([s0, p.rows.length]);
+  }
+  block('🟢  WHAT YOU OWN', assets, function (x) { return x.cls; }, VW_CLASS_ORDER, C.GOOD, true);
+  p.rows.push([]);
+  // Debts by bank: HDFC (home loan + Regalia card), Kotak, Neo, CIBC, CRA …
+  block('🔴  WHAT YOU OWE', debts, function (x) { return vwInstitution(x.name); }, null, C.BAD, false);
+  p.rows.push([]);
+  var nr = p.rows.length;
+  p.rows.push(['', 'NET WORTH = what you own − what you owe', '', own - owe]);
+  vwStyle(p, nr, nr + 1, 0, W, { bg: C.NAVY, color: C.WHITE, bold: true, size: 12 }); vwNumFmt(p, nr, nr + 1, 3, 4, VW_CAD);
+  p.rows.push(['', 'The house counts at what it cost until you type its value on Assets & Debts. Its cost before Aug 2026 comes in when older HDFC statements are uploaded.']);
+  vwStyle(p, nr + 1, nr + 2, 1, 2, { italic: true, color: C.GREY });
+  p.widths = [30, 360, 120, 110, 120, 110, 95, 230];
+  return p;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1511,7 +1653,7 @@ function vwProtectTransactions(ss) {
  */
 var VW_LOCK = '🔒 Finance Engine — facts, worked out by the sheet';
 var VW_FACT_TABS = {            // whole tab locked, except these columns (yours on a fact page)
-  '🏠 Today': ['A'], '🏠 Home': ['A'], '📒 Ledger': [], '🗂 Summary': [], '🧠 Habits': ['G'], '🔮 Forecast': [], '🩺 Health': [],
+  '🏠 Today': ['A'], '🏛 Net worth': [], '🏠 Home': ['A'], '📒 Ledger': [], '🗂 Summary': [], '🧠 Habits': ['G'], '🔮 Forecast': [], '🩺 Health': [],
   'Now': [], 'Money map': [], 'Big picture': [], 'Balance Sheet': [],
   'Dashboard': [], 'Overview': [], 'Trends': [], 'Accounts': [], 'To label': []
 };

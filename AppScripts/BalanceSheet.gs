@@ -177,7 +177,11 @@ function bsViewTab(ss) {
     'MAP(INDEX(k,,3),LAMBDA(d,IF(ISNUMBER(d),TEXT(d,"yyyy-mm-dd"),""))),amt,cur,' +
     'MAP(amt,cur,LAMBDA(v,c,v*' + BS_RATE('c') + '))))';
   // Until its value is typed on Assets & Debts (a row with this name), the house counts at what it cost.
-  var house = 'LET(v,SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"House"),n,"' + BS.HOUSE + '",' +
+  // Its cost = Amount invested on the house row (house payments + the India cash beyond the parents'
+  // share, worked out by the script); before that number exists, the house categories in _Calc.
+  var hRow = 'FILTER(' + IN + BS.C.invested + '2:' + BS.C.invested + ',' + IN + 'A2:A="' + BS.HOUSE + '",' + IN + BS.C.invested + '2:' + BS.C.invested + '<>"")';
+  var hCur = 'INDEX(FILTER(' + IN + 'D2:D,' + IN + 'A2:A="' + BS.HOUSE + '"),1)';
+  var house = 'LET(v,IFERROR(INDEX(' + hRow + ',1)*' + BS_RATE(hCur) + ',SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"House")),n,"' + BS.HOUSE + '",' +
     'IF(AND(v>0,' + notMine('n') + '),{n,"Property","Your transactions",' + latest + ',v,"CAD",v},{"","","","","","",""}))';
   var lent = 'LET(v,SUMIFS(_Calc!$L:$L,_Calc!$J:$J,"Lent"),n,"Money lent to others (net)",' +
     'IF(AND(v>0,' + notMine('n') + '),{n,"Money owed to you","Your transactions",' + latest + ',v,"CAD",v},{"","","","","","",""}))';
