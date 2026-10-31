@@ -59,6 +59,7 @@ function pollInbox() {
     } catch (err) {
       planIssue('Daily dashboard refresh failed', err);
     }
+    vwTrace('poll busy=' + busy);
     if (!busy) vwMaybeRefresh();
   } finally {
     lock.releaseLock();
