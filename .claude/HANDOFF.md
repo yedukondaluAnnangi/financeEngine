@@ -91,10 +91,7 @@ A row with **blank column A** and its title in B; every reader skips it. `vwTidy
 - `_Calc` and Views convert foreign money at the live Categories rate (Google Finance), not the stored Amount CAD.
 
 ## 4. State when this was written
-- Last code commit `618d6d0`, deployed OK. Uploads through 30 Oct ingested OK, including the new investor account.
-- Commitments: sorted, 28 rows, none lost. Assets & Debts: sorted, totals live.
-- `_Issues` has one entry from 30 Oct: "Sorting … failed: Service Spreadsheets failed" (Google service error during the tidy). The sections did get written; **check** that `vw_tidy_version` is set and the groups are folded, and watch the next tidy for it.
-- 📒 Money was still mid-build (a tab "📒 Money (building)" existed). It should complete on a later poll. A 183-group page is the heaviest; **confirm it finishes** and doesn't stick in `vw_pending`.
+See the top entry of HISTORY.md (31 Oct 2026). Pages, sorting and folds verified live.
 
 ## 5. Known problems / to check first
 1. Fixed 31 Oct: `vwWriteSections` overwrites first and clears only leftover rows below, so a failure cannot erase typed rows.

@@ -76,9 +76,6 @@ function vwDay(iso) {
    When to rebuild
    --------------------------------------------------------------------------- */
 
-/** TEMPORARY: where a page build got to, on _Issues. */
-function vwTrace(msg) { try { planIssue('TRACE ' + vwStamp() + ' ' + msg, 'trace'); } catch (e) {} }
-
 /**
  * Called from the poll when nothing else ran. Rebuilds when the code version
  * changed, the day changed, or anyone edited the sheet since the last build
@@ -98,7 +95,6 @@ function vwMaybeRefresh() {
   }
   // A rebuild that ran out of time left the rest in vw_pending: carry on with it first.
   if (props.getProperty('vw_pending')) due = true;
-  vwTrace('maybe due=' + due + ' pending=' + props.getProperty('vw_pending') + ' waits=' + props.getProperty('vw_now_waits'));
   if (!due) return false;
   var done = false;
   try {
@@ -127,7 +123,6 @@ function vwRefresh() {
   SpreadsheetApp.flush();
   var d = vwRead(ss);
   var m = vwModel(d);
-  vwTrace('read ok, cash positive=' + (m.nowInfo.cash > 0));
   // Right after a deploy Now is still recalculating and reads as $0: build from it on a later poll (3 tries at most).
   var waits = +(props.getProperty('vw_now_waits') || 0);
   if (!(m.nowInfo.cash > 0) && waits < 3) { props.setProperty('vw_now_waits', String(waits + 1)); return false; }
@@ -145,7 +140,6 @@ function vwRefresh() {
       return false;
     }
     var step = pending.shift();
-    vwTrace('step ' + step);
     if (step === 'finish') {
       try { vwWriteInvested(ss, m); } catch (err) { planIssue('Assets & Debts amount invested failed', err); }
       try { vwWritePlans(ss, m); } catch (err) { planIssue('Writing the Commitments plan column failed', err); }
@@ -158,7 +152,6 @@ function vwRefresh() {
     props.setProperty('vw_pending', JSON.stringify(pending));
   }
   props.deleteProperty('vw_pending');
-  vwTrace('all steps done');
   vwSaveState(m);
   SpreadsheetApp.flush();
   props.setProperty('vw_built_at', String(Date.now()));
@@ -1631,17 +1624,14 @@ function vwTidyInputs(ss) {
   // One tab per poll, marked before the work: a timeout logs nothing, and must not repeat forever.
   if (props.getProperty('vw_tidy_step') !== 'assets') {
     props.setProperty('vw_tidy_step', 'assets');
-    vwTrace('tidy commitments');
     vwTidyCommitments(ss);
   } else {
     props.setProperty('vw_tidy_version', PLAN.VERSION);
     props.setProperty('vw_tidy_day', day);
     props.deleteProperty('vw_tidy_step');
-    vwTrace('tidy assets');
     vwTidyAssets(ss);
   }
   SpreadsheetApp.flush();
-  vwTrace('tidy step done');
   return true;
 }
 

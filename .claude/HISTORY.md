@@ -16,7 +16,9 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 **Data:** pay row was Biweekly again (bank and its note say weekly): set Weekly, flagged to the user. Due cells had 1900 date formats: script read the wrong day. Investor transfers labelled with a new Payees rule. Ledger, Summary, Expected payments backed up to the deleted-tabs file and deleted; no formula referenced them.
 **Bugs:** vwWriteSections cleared before writing (fixed). Invested vs value mixed currencies on the house (fixed).
 **Gotcha:** getValues returns a Date for a number with a date format; serial 1 reads as day 31.
-**Open:** POP row, second JioFiber, orange rows, the unmatched Remitly, ₹195 AP bill-pay label, pre-Oct investor statement, balance emails, Notion / Finance Guard.
+**Rebuild stall (found with a temporary trace, since removed):** the sort of Commitments and Assets & Debts hit the 6-minute limit before recording that it ran, so every poll repeated it and the pages never built. It now runs once per deploy, one tab per poll, marked before the work. Pages wait if Now reads no cash. A new deploy or day clears leftover page steps. A formula on an Assets & Debts section row in E was circular (J reads E) and showed #REF!; the script now writes a plain number there.
+**Gotcha:** a build takes about five polls after a version bump: upkeep, Now, sort Commitments, sort Assets, pages. Do not read a slow rebuild as a failure before then, and do not bump the version again meanwhile, since that restarts it. A code change that needs no rebuild should not bump it.
+**Open:** one parked house row, second JioFiber, orange rows, one unmatched transfer, one unlabelled bill payment, pre-Oct investor statement, whether the electricity auto-debit stopped, balance emails, Notion / Finance Guard.
 
 ## 2026-10-30 — Money page, folded input tabs, clean-up; handoff written
 
