@@ -9,6 +9,14 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+## 2026-10-30 — Money page, folded input tabs, clean-up; handoff written
+
+**Changed** (`618d6d0`): 📒 Money replaces Ledger + Summary, Commitments and Assets & Debts sorted into titled sections and folded in place, undecided payments become Commitments rows (Expected tab + code removed), unused page builders deleted. Upload code untouched.
+
+**Open:** see `.claude/HANDOFF.md`, the full state and next steps. First: confirm Money finished, then delete Ledger, Summary, Expected payments after backup.
+
+---
+
 ## 2026-10-27 — gap audit across tabs, first round of fixes
 
 **Asked:** list every gap between the tabs (44 found: transfers, balances, Commitments
