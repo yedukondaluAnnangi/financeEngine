@@ -1021,7 +1021,8 @@ function vwTodayPage(m) {
   // ---- 7. Coming up after the 14 days (folded) ---------------------------------------------
   var next = m.ev.filter(function (e) { return !e.past && e.tag === 'planned' && e.date > soon && e.date <= later; })
     .sort(function (a, b) { return a.date < b.date ? -1 : 1; });
-  band('📅  COMING UP — ' + vwDay(pAddDays(soon, 1)) + ' to ' + vwDay(later) + '  (' + next.length + ' — ➕ to open)', C.LIGHT, C.NAVY);
+  var nextIn = next.reduce(function (t, e) { return t + Math.max(0, e.cad); }, 0), nextOut = next.reduce(function (t, e) { return t + Math.min(0, e.cad); }, 0);
+  band('📅  COMING UP — ' + vwDay(pAddDays(soon, 1)) + ' to ' + vwDay(later) + '  ·  ' + next.length + ' items  ·  in ' + vwMoneyCad(nextIn) + '  ·  out ' + vwMoneyCad(nextOut) + ' (➕ to open)', C.LIGHT, C.NAVY);
   var u0 = p.rows.length;
   next.forEach(function (e) {
     var row = p.rows.length;
@@ -1344,6 +1345,8 @@ function vwNetWorthPage(m) {
     adCur[String(r[0])] = String(r[3] || '');
     if (r[5] !== '' && r[5] !== null && !isNaN(Number(r[5]))) invested[String(r[0])] = Number(r[5]);
   });
+  // Invested is in the row's own money; the value may be in CAD (the house until its value is typed).
+  var invOf = function (x) { return invested[x.name] * (m.rate[adCur[x.name] || x.cur] || 1) / (m.rate[x.cur] || 1); };
   var read = function (r0, r1) {
     var out = [];
     for (var i = r0 - 1; i < r1 - 1 && i < bs.length; i++) {
@@ -1374,23 +1377,35 @@ function vwNetWorthPage(m) {
   vwHead(p, p.rows.length - 1, W);
 
   function item(x, depth) {
-    var r = p.rows.length, inv = invested[x.name], gain = inv !== undefined && x.amt ? x.amt - inv : '';
+    var r = p.rows.length, inv = invested[x.name] !== undefined ? invOf(x) : undefined, gain = inv !== undefined && x.amt ? x.amt - inv : '';
     p.rows.push(['', '            ' + x.name, x.amt, x.cad, inv !== undefined ? inv : '', gain, x.asOf, x.from]);
     var f = x.cur === 'INR' ? VW_INR : VW_CAD2;
     vwNumFmt(p, r, r + 1, 2, 3, f); vwNumFmt(p, r, r + 1, 3, 4, VW_CAD); vwNumFmt(p, r, r + 1, 4, 6, f);
     vwStyle(p, r, r + 1, 6, 8, { color: C.GREY });
   }
+  // A folded row: value when it is one currency, CAD, invested and gain (in CAD), latest date, count.
+  function totals(r, list) {
+    var curs = vwUniq(list.map(function (x) { return x.cur; }));
+    var withInv = list.filter(function (x) { return invested[x.name] !== undefined; });
+    var inv = withInv.reduce(function (t, x) { return t + invOf(x) * (m.rate[x.cur] || 1); }, 0);
+    var gain = withInv.filter(function (x) { return x.amt; }).reduce(function (t, x) { return t + (x.amt - invOf(x)) * (m.rate[x.cur] || 1); }, 0);
+    var asOf = list.map(function (x) { return x.asOf; }).sort().pop() || '';
+    p.rows[r] = [p.rows[r][0], p.rows[r][1], curs.length === 1 ? list.reduce(function (t, x) { return t + x.amt; }, 0) : '', sum(list),
+      withInv.length ? inv : '', withInv.length ? gain : '', asOf ? vwTxt(asOf) : '', list.length + (list.length === 1 ? ' item' : ' items')];
+    if (curs.length === 1) vwNumFmt(p, r, r + 1, 2, 3, curs[0] === 'INR' ? VW_INR : VW_CAD);
+    vwNumFmt(p, r, r + 1, 3, 6, VW_CAD);
+  }
   function block(label, list, groupOf, order, bg, byInst) {
     var r = p.rows.length;
     p.rows.push(['', label, '', sum(list)]);
-    vwStyle(p, r, r + 1, 0, W, { bg: bg, bold: true, size: 12 }); vwNumFmt(p, r, r + 1, 3, 4, VW_CAD); p.heights[r] = 30;
+    vwStyle(p, r, r + 1, 0, W, { bg: bg, bold: true, size: 12 }); totals(r, list); p.heights[r] = 30;
     var s0 = p.rows.length;
     var keys = vwUniq(list.map(groupOf));
     if (order) keys.sort(function (a, b) { return (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99); });
     keys.forEach(function (k) {
       var inK = list.filter(function (x) { return groupOf(x) === k; }), kr = p.rows.length;
       p.rows.push(['', '   ' + (VW_CLASS_ICON[k] ? VW_CLASS_ICON[k] + '  ' : '') + k + '  (' + inK.length + ')', '', sum(inK)]);
-      vwStyle(p, kr, kr + 1, 1, W, { bold: true, bg: C.LIGHT }); vwNumFmt(p, kr, kr + 1, 3, 4, VW_CAD);
+      vwStyle(p, kr, kr + 1, 1, W, { bold: true, bg: C.LIGHT }); totals(kr, inK);
       var s1 = p.rows.length;
       if (!byInst) { inK.forEach(function (x) { item(x); }); p.groups.push([s1, p.rows.length]); return; }
       vwUniq(inK.map(function (x) { return vwInstitution(x.name); })).forEach(function (inst) {
@@ -1398,7 +1413,7 @@ function vwNetWorthPage(m) {
         if (inI.length === 1) { item(inI[0]); return; }   // one account: nothing to fold
         var ir = p.rows.length;
         p.rows.push(['', '      ' + inst + '  (' + inI.length + ')', '', sum(inI)]);
-        vwStyle(p, ir, ir + 1, 1, 2, { bold: true }); vwNumFmt(p, ir, ir + 1, 3, 4, VW_CAD);
+        vwStyle(p, ir, ir + 1, 1, 2, { bold: true }); totals(ir, inI);
         var s2 = p.rows.length;
         inI.forEach(function (x) { item(x); });
         p.groups.push([s2, p.rows.length]);
@@ -1477,22 +1492,28 @@ function vwMoneyPage(m) {
     vwNumFmt(p, r, r + 1, 3, 4, vwLocalFmt(e.cur)); vwNumFmt(p, r, r + 1, 1, 2, 'ddd d mmm yy'); vwNumFmt(p, r, r + 1, 4, 5, VW_CAD);
     vwStyle(p, r, r + 1, 5, 7, { color: C.GREY });
   }
-  function head(label, value, pad, style, fmt, note) {
-    var r = p.rows.length;
-    p.rows.push([pad + label, '', '', fmt ? value : '', fmt ? '' : value, note || '']);
+  // A folded row sums what is inside it: dates, account(s), amount when it is one currency, CAD, count.
+  function head(label, list, pad, style, note) {
+    var r = p.rows.length, dates = list.map(function (e) { return e.date; }).sort();
+    var curs = vwUniq(list.map(function (e) { return e.cur; })), accts = vwUniq(list.map(function (e) { return vwShort(e.acct); }));
+    var day = function (d) { return vwDay(d).replace(/^\S+ /, ''); };
+    var span = !dates.length ? '' : dates[0] === dates[dates.length - 1] ? day(dates[0]) : day(dates[0]) + ' → ' + day(dates[dates.length - 1]);
+    p.rows.push([pad + label, span ? vwTxt(span) : '', accts.length === 1 ? accts[0] : accts.length ? accts.length + ' accounts' : '',
+      curs.length === 1 ? list.reduce(function (t, e) { return t + e.amt; }, 0) : '', sum(list), note || list.length + (list.length === 1 ? ' payment' : ' payments')]);
     vwStyle(p, r, r + 1, 0, W, style);
-    if (fmt) vwNumFmt(p, r, r + 1, 3, 4, fmt); else vwNumFmt(p, r, r + 1, 4, 5, VW_CAD);
+    if (curs.length === 1) vwNumFmt(p, r, r + 1, 3, 4, curs[0] === 'INR' ? VW_INR : VW_CAD);
+    vwNumFmt(p, r, r + 1, 4, 5, VW_CAD);
     return p.rows.length;
   }
 
   // 🔴 What needs you (bank data problems; what to pay is on Today).
   var needs = m.ev.filter(function (e) { return ['label', 'unpaired', 'check', 'unknown'].indexOf(e.tag) !== -1; });
-  var s0 = head('🔴  NEEDS YOU  (' + needs.length + ')', sum(needs), '', { bg: C.BAD, bold: true, size: 12 });
+  var s0 = head('🔴  NEEDS YOU  (' + needs.length + ')', needs, '', { bg: C.BAD, bold: true, size: 12 });
   [['❔ Can\'t tell yet — upload a newer statement', 'unknown'], ['⚠ Charged after you cancelled', 'check'],
    ['↔ Transfers that did not match', 'unpaired'], ['🏷 No category yet — add a Payees rule', 'label']].forEach(function (x) {
     var l = needs.filter(function (e) { return e.tag === x[1]; }).sort(byDate);
     if (!l.length) return;
-    var s = head(x[0] + '  (' + l.length + ')', sum(l), '   ', { bold: true, bg: C.SUB });
+    var s = head(x[0] + '  (' + l.length + ')', l, '   ', { bold: true, bg: C.SUB });
     l.forEach(function (e) { tx(e, '      '); });
     p.groups.push([s, p.rows.length]);
   });
@@ -1505,23 +1526,22 @@ function vwMoneyPage(m) {
     var inM = past.filter(function (e) { return e.date.slice(0, 7) === mo; }).sort(byDate);
     var real = inM.filter(function (e) { return e.kind !== VW.MOVED; });
     var inn = sum(real.filter(function (e) { return e.cad > 0; })), out = sum(real.filter(function (e) { return e.cad < 0; }));
-    var s1 = head(pMonthName(mo) + (mo === cur ? '  ⏳ so far' : '  ✅'), inn + out, '', { bg: mo === cur ? C.WARN : C.LIGHT, bold: true, size: 12 }, null,
+    var s1 = head(pMonthName(mo) + (mo === cur ? '  ⏳ so far' : '  ✅'), real, '', { bg: mo === cur ? C.WARN : C.LIGHT, bold: true, size: 12 },
       'In ' + vwMoneyCad(inn) + '  ·  Out ' + vwMoneyCad(-out) + '  ·  CAD column = left over (moves between your accounts not counted)');
     ['🇨🇦 Canada', '🇮🇳 India'].forEach(function (cn) {
       var L = inM.filter(function (e) { return m.country(e.acct) === cn; });
       if (!L.length) return;
-      var fmt = cn === '🇮🇳 India' ? VW_INR : VW_CAD;
-      var s2 = head(cn + '  (' + L.length + ')', L.filter(function (e) { return e.kind !== VW.MOVED; }).reduce(function (s, e) { return s + e.amt; }, 0), '   ', { bold: true }, fmt);
+      var s2 = head(cn + '  (' + L.length + ')', L.filter(function (e) { return e.kind !== VW.MOVED; }), '   ', { bold: true }, 'Moves between your accounts not counted');
       vwUniq(L.map(function (e) { return e.kind; })).sort(function (a, b) {
         return (a === 'Income' ? -1 : a === VW.MOVED ? 1 : 0) - (b === 'Income' ? -1 : b === VW.MOVED ? 1 : 0) || (a < b ? -1 : 1);
       }).forEach(function (k) {
         var K = L.filter(function (e) { return e.kind === k; });
-        var s3 = head(k + '  (' + K.length + ')', K.reduce(function (s, e) { return s + e.amt; }, 0), '      ', { bold: true, bg: C.SUB }, fmt);
+        var s3 = head(k + '  (' + K.length + ')', K, '      ', { bold: true, bg: C.SUB });
         var cats = vwUniq(K.map(function (e) { return e.catg; })).sort();
         if (cats.length === 1) K.forEach(function (e) { tx(e, '            '); });
         else cats.forEach(function (cg) {
           var Cg = K.filter(function (e) { return e.catg === cg; });
-          var s4 = head(cg + '  (' + Cg.length + ')', Cg.reduce(function (s, e) { return s + e.amt; }, 0), '         ', { italic: true, bold: true }, fmt);
+          var s4 = head(cg + '  (' + Cg.length + ')', Cg, '         ', { italic: true, bold: true });
           Cg.forEach(function (e) { tx(e, '               '); });
           p.groups.push([s4, p.rows.length]);
         });
@@ -1579,10 +1599,10 @@ function vwWriteSections(sh, sections, cols, titleCol, width) {
     row += 1 + x.rows.length;
   });
   cols.forEach(function (list, k) {
-    var rg = sh.getRange(2, list[0], used, list.length);
-    rg.clearContent();
-    rg.setBackground(null).setFontWeight('normal');
+    // Overwrite first, then clear only what is left below: a failure can never leave typed rows erased.
     sh.getRange(2, list[0], blocks[k].length, list.length).setValues(blocks[k]);
+    if (used > blocks[k].length) sh.getRange(2 + blocks[k].length, list[0], used - blocks[k].length, list.length).clearContent();
+    sh.getRange(2, list[0], used, list.length).setBackground(null).setFontWeight('normal');
   });
   titles.forEach(function (t) {
     sh.getRange(t.row, 1, 1, width).setBackground(TH.HEAD).setFontWeight('bold').setFontColor(TH.NAVY);
@@ -1618,8 +1638,13 @@ function vwTidyCommitments(ss) {
   });
   // A–L = yours, AC–AD = how it is paid + advice, AF–AH = card settings. Formula columns are not moved.
   var list = function (a, b) { var o = []; for (var i = a; i <= b; i++) o.push(i); return o; };
-  vwWriteSections(sh, sections, [list(1, 12), list(PLAN.HOW_COL, PLAN.HOW_COL + 1), list(PLAN.CARD_COL, PLAN.CARD_COL + 2)], 2, 12);
+  sh.getRange(2, 3, sh.getMaxRows() - 1, 1).setNumberFormat('#,##0.00');
+  var titles = vwWriteSections(sh, sections, [list(1, 12), list(PLAN.HOW_COL, PLAN.HOW_COL + 1), list(PLAN.CARD_COL, PLAN.CARD_COL + 2)], 2, 12);
   fxCommitFormulas(sh);
+  // A folded section shows what it costs a month (N = per month in CAD).
+  titles.forEach(function (t) {
+    if (t.n) sh.getRange(t.row, 3).setFormula('=SUM(N' + (t.row + 1) + ':N' + (t.row + t.n) + ')').setNumberFormat('$#,##0" /month"');
+  });
 }
 
 function vwTidyAssets(ss) {
@@ -1637,12 +1662,18 @@ function vwTidyAssets(ss) {
   var sections = [{ title: '📊 Totals', rows: [] }].concat(order.filter(function (k) { return buckets[k]; }).map(function (k) {
     return { title: k, rows: buckets[k].sort(function (a, b) { return String(a[0]) < String(b[0]) ? -1 : 1; }) };
   }));
+  sh.getRange(2, 5, sh.getMaxRows() - 1, 2).setNumberFormat('#,##0.00');
   var titles = vwWriteSections(sh, sections, [[1, 2, 3, 4, 5, 6, 7, 8]], 2, 12);
   // Live totals beside each section title. J = what each row is worth now, in CAD.
   var sign = {};
   titles.forEach(function (t, i) {
     if (!i) return;
-    sh.getRange(t.row, 11).setFormula('=SUM(J' + (t.row + 1) + ':J' + (t.row + t.n) + ')').setNumberFormat('$#,##0');
+    var a = t.row + 1, z = t.row + t.n;
+    sh.getRange(t.row, 11).setFormula('=SUM(J' + a + ':J' + z + ')').setNumberFormat('$#,##0');
+    // A folded section: value, invested (both CAD) and the latest date.
+    sh.getRange(t.row, 5).setFormula('=K' + t.row).setNumberFormat('$#,##0');
+    sh.getRange(t.row, 6).setFormula('=ARRAYFORMULA(SUM(IF(ISNUMBER(F' + a + ':F' + z + '),F' + a + ':F' + z + '*IFERROR(VLOOKUP(D' + a + ':D' + z + ',Categories!$E:$F,2,0),1),0)))').setNumberFormat('$#,##0;;');
+    sh.getRange(t.row, 7).setFormula('=IF(COUNT(G' + a + ':G' + z + ')=0,"",MAX(G' + a + ':G' + z + '))').setNumberFormat('yyyy-mm-dd');
     sign[t.title] = t.row;
   });
   var rows = function (test) { return titles.filter(function (t, i) { return i && test(t.title); }).map(function (t) { return 'K' + t.row; }).join('+') || '0'; };

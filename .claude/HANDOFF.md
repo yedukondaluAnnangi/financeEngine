@@ -99,7 +99,7 @@ A row with **blank column A** and its title in B; every reader skips it. `vwTidy
 - 📒 Money was still mid-build (a tab "📒 Money (building)" existed). It should complete on a later poll. A 183-group page is the heaviest; **confirm it finishes** and doesn't stick in `vw_pending`.
 
 ## 5. Known problems / to check first
-1. **`vwWriteSections` isn't atomic**: it clears then writes. A failure between the two could lose typed rows. Make it safe (write without clearing first, or snapshot to a property) before the next nightly runs, or disable the nightly part.
+1. Fixed 31 Oct: `vwWriteSections` overwrites first and clears only leftover rows below, so a failure cannot erase typed rows.
 2. **Assets & Debts net worth differs from 🏛 Net worth**: the tab's Debts total excludes HST owed (a Dashboard figure, not a row). Add it or make both read one number.
 3. Column J on Assets & Debts: verify Debts rows and the house after rebuilds.
 4. Commitment sections sort by group: a transit toll landed under Essentials; a penal charge under Fees. Fine, or re-label.
