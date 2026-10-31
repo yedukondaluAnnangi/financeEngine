@@ -122,7 +122,8 @@ function vwMaybeRefresh() {
 function vwRefresh() {
   var props = PropertiesService.getScriptProperties(), start = Date.now();
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
-  try { vwTidyInputs(ss); } catch (err) { planIssue('Sorting Commitments / Assets & Debts failed', err); }
+  // Sorting gets a poll of its own: it and the pages together can pass the 6-minute limit.
+  try { if (vwTidyInputs(ss)) return false; } catch (err) { planIssue('Sorting Commitments / Assets & Debts failed', err); return false; }
   SpreadsheetApp.flush();
   var d = vwRead(ss);
   var m = vwModel(d);
@@ -1626,12 +1627,22 @@ function vwTidyInputs(ss) {
   var props = PropertiesService.getScriptProperties(), now = new Date();
   var day = Utilities.formatDate(now, CFG_TZ(), 'yyyy-MM-dd'), hour = +Utilities.formatDate(now, CFG_TZ(), 'H');
   var newCode = props.getProperty('vw_tidy_version') !== PLAN.VERSION;
-  if (!newCode && !(hour >= 2 && hour < 6 && props.getProperty('vw_tidy_day') !== day)) return;
-  vwTidyCommitments(ss);
-  vwTidyAssets(ss);
+  if (!newCode && !(hour >= 2 && hour < 6 && props.getProperty('vw_tidy_day') !== day)) return false;
+  // One tab per poll, marked before the work: a timeout logs nothing, and must not repeat forever.
+  if (props.getProperty('vw_tidy_step') !== 'assets') {
+    props.setProperty('vw_tidy_step', 'assets');
+    vwTrace('tidy commitments');
+    vwTidyCommitments(ss);
+  } else {
+    props.setProperty('vw_tidy_version', PLAN.VERSION);
+    props.setProperty('vw_tidy_day', day);
+    props.deleteProperty('vw_tidy_step');
+    vwTrace('tidy assets');
+    vwTidyAssets(ss);
+  }
   SpreadsheetApp.flush();
-  props.setProperty('vw_tidy_version', PLAN.VERSION);
-  props.setProperty('vw_tidy_day', day);
+  vwTrace('tidy step done');
+  return true;
 }
 
 /** Write the sorted sections to the listed columns, reset the row groups, fold, colour the title rows. */
@@ -1641,7 +1652,8 @@ function vwWriteSections(sh, sections, cols, titleCol, width) {
   var used = Math.max(sh.getLastRow() - 1, total);
   if (sh.getMaxRows() < used + 1) sh.insertRowsAfter(sh.getMaxRows(), used + 1 - sh.getMaxRows());
   // Old groups off.
-  for (var r = 2; r <= used + 1; r++) {
+  // Formula columns can make the last row far below the typed rows; groups only ever sit near them.
+  for (var r = 2; r <= Math.min(used + 1, total + 40); r++) {
     var depth = sh.getRowGroupDepth(r);
     if (depth > 0) sh.getRange(r, 1).shiftRowGroupDepth(-depth);
   }
@@ -1695,10 +1707,12 @@ function vwTidyCommitments(ss) {
   sh.getRange(2, 3, sh.getMaxRows() - 1, 1).setNumberFormat('#,##0.00');
   var titles = vwWriteSections(sh, sections, [list(1, 12), list(PLAN.HOW_COL, PLAN.HOW_COL + 1), list(PLAN.CARD_COL, PLAN.CARD_COL + 2)], 2, 12);
   fxCommitFormulas(sh);
-  var dueCells = sh.getRange(2, 6, sh.getLastRow() - 1, 1), dueVals = dueCells.getValues();
+  var endRow = titles[titles.length - 1].row + titles[titles.length - 1].n;
+  var dueCells = sh.getRange(2, 6, endRow - 1, 1), dueVals = dueCells.getValues();
   var dayOf = function (v) { return Math.round((v.getTime() - new Date(1899, 11, 30).getTime()) / 864e5); };
-  dueCells.setValues(dueVals.map(function (x) { return [x[0] instanceof Date && x[0].getFullYear() < 1901 ? dayOf(x[0]) : x[0]]; }));
-  dueCells.setNumberFormats(dueVals.map(function (x) { return [x[0] instanceof Date && x[0].getFullYear() >= 1901 ? 'dd/mm/yyyy' : '0']; }));
+  var old = function (v) { return v instanceof Date && v.getFullYear() < 1901; };
+  if (dueVals.some(function (x) { return old(x[0]); })) dueCells.setValues(dueVals.map(function (x) { return [old(x[0]) ? dayOf(x[0]) : x[0]]; }));
+  dueCells.setNumberFormats(dueVals.map(function (x) { return [x[0] instanceof Date && !old(x[0]) ? 'dd/mm/yyyy' : '0']; }));
   // A folded section shows what it costs a month (N = per month in CAD).
   titles.forEach(function (t) {
     if (t.n && !/^✂/.test(t.title)) sh.getRange(t.row, 3).setFormula('=SUM(N' + (t.row + 1) + ':N' + (t.row + t.n) + ')').setNumberFormat('$#,##0" /month";;');
