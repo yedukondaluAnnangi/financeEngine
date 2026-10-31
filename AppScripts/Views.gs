@@ -87,6 +87,8 @@ function vwMaybeRefresh() {
   var stamp = today + '|' + PLAN.VERSION;
   var builtAt = +(props.getProperty('vw_built_at') || 0);
   var due = props.getProperty('vw_stamp') !== stamp;
+  // A new day or a new deploy starts the page list again: steps left from the last build would skip Today.
+  if (due) props.deleteProperty('vw_pending');
   if (!due) {
     if (Date.now() - builtAt < VW.MIN_GAP_MIN * 60000) return false;
     due = DriveApp.getFileById(CFG.SHEET_ID).getLastUpdated().getTime() > builtAt;
