@@ -129,3 +129,4 @@ A row with **blank column A** and its title in B; every reader skips it. `vwTidy
 - Deploy code before deleting tabs, or the old code rebuilds them.
 - TD downloads are identical in name: the investor file must end in `2366.csv`; CIBC chequing must end in `096.csv`.
 - Background shells may be killed under memory pressure. `sheets list` uses the key `name`, not `title`.
+- Never put a formula on an Assets & Debts section row in E that depends on J or K: J1 reads E2:E, so it is circular and shows #REF! here and on Now.

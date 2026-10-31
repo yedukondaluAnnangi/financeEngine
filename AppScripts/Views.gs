@@ -1312,6 +1312,18 @@ function vwWriteInvested(ss, m) {
     if (Number(r[5]) !== v) sh.getRange(i + 2, 6).setValue(v);
     if (!sh.getRange(i + 2, 6).getNote()) sh.getRange(i + 2, 6).setNote('Automatic — the sum of these payments in your transactions.');
   });
+  vwAssetTitleValues(ss);
+}
+
+/** Section titles on Assets & Debts show their total as a plain number: J reads E, so a formula would be circular. */
+function vwAssetTitleValues(ss) {
+  var sh = getTab(ss, BS.TAB_INPUT);
+  if (!sh || sh.getLastRow() < 2) return;
+  var n = sh.getLastRow() - 1, a = sh.getRange(2, 1, n, 2).getValues(), k = sh.getRange(2, 11, n, 1).getValues();
+  a.forEach(function (r, i) {
+    if (String(r[0]).trim() || !String(r[1]).trim() || typeof k[i][0] !== 'number') return;
+    sh.getRange(i + 2, 5).setValue(k[i][0]).setNumberFormat('$#,##0');
+  });
 }
 
 /**
@@ -1697,8 +1709,7 @@ function vwTidyAssets(ss) {
     if (!i) return;
     var a = t.row + 1, z = t.row + t.n;
     sh.getRange(t.row, 11).setFormula('=SUM(J' + a + ':J' + z + ')').setNumberFormat('$#,##0');
-    // A folded section: value, invested (both CAD) and the latest date.
-    sh.getRange(t.row, 5).setFormula('=K' + t.row).setNumberFormat('$#,##0');
+    // A folded section: invested (CAD) and the latest date. Value in E is written by vwAssetTitleValues: a formula there would be circular (J reads E).
     sh.getRange(t.row, 6).setFormula('=ARRAYFORMULA(SUM(IF(ISNUMBER(F' + a + ':F' + z + '),F' + a + ':F' + z + '*IFERROR(VLOOKUP(D' + a + ':D' + z + ',Categories!$E:$F,2,0),1),0)))').setNumberFormat('$#,##0;;');
     sh.getRange(t.row, 7).setFormula('=IF(COUNT(G' + a + ':G' + z + ')=0,"",MAX(G' + a + ':G' + z + '))').setNumberFormat('yyyy-mm-dd');
     sign[t.title] = t.row;
