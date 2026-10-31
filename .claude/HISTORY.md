@@ -9,6 +9,15 @@ Every Claude session appends an entry here before it ends (see `.claude/CLAUDE.m
 
 ---
 
+
+## 31 Oct 2026 — folded totals, then a gap sweep ("least time, most information")
+**Asked:** folded rows must show totals; go through the sheet, find what wastes time, fix it.
+**Changed:** folded rows on Money, Net worth, Today coming-up, Commitments, Assets & Debts show aggregates. Do now no longer lists bank fees; a missing auto-debit says Check, not Pay; due today is not overdue. Transfer pairing takes one arrival from two accounts. Net worth: an account alone at its bank is indented as its own bank. Assets & Debts owe includes HST so it agrees with Net worth. Forecast starts after HST held and opens with a one-line verdict; Habits too; limits only prompt on unplanned rows; new items show "new" not 0. Tidy keeps day-of-month Due cells numeric.
+**Data:** pay row was Biweekly again (bank and its note say weekly): set Weekly, flagged to the user. Due cells had 1900 date formats: script read the wrong day. Investor transfers labelled with a new Payees rule. Ledger, Summary, Expected payments backed up to the deleted-tabs file and deleted; no formula referenced them.
+**Bugs:** vwWriteSections cleared before writing (fixed). Invested vs value mixed currencies on the house (fixed).
+**Gotcha:** getValues returns a Date for a number with a date format; serial 1 reads as day 31.
+**Open:** POP row, second JioFiber, orange rows, the unmatched Remitly, ₹195 AP bill-pay label, pre-Oct investor statement, balance emails, Notion / Finance Guard.
+
 ## 2026-10-30 — Money page, folded input tabs, clean-up; handoff written
 
 **Changed** (`618d6d0`): 📒 Money replaces Ledger + Summary, Commitments and Assets & Debts sorted into titled sections and folded in place, undecided payments become Commitments rows (Expected tab + code removed), unused page builders deleted. Upload code untouched.

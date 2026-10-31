@@ -260,7 +260,7 @@ function vwModel(d) {
     var st = String(r[19] || ''), cycle = pCellIso(r[17]), next = pCellIso(r[18]);
     var from = today;
     if (/^✅/.test(st)) from = next || pAddDays(today, 1);
-    else if (/^🔴/.test(st) || (/^⏳/.test(st) && cycle && cycle <= today)) {
+    else if ((/^🔴/.test(st) && cycle !== today) || (/^⏳/.test(st) && cycle && cycle < today)) {
       ev.push(vwCm(m, c, r, cycle || today, '🔴 Overdue since ' + vwDay(cycle || today), 'overdue'));
       from = pAddDays(cycle || today, 1);
     } else if (/^❔/.test(st)) {
@@ -334,6 +334,21 @@ function vwPairTransfers(m) {
       if (!y) return false;
       o.pair = x; x.pair = o; o2.pair = y; y.pair = o2;
       return true;
+    });
+  });
+  // One arrival funded from two accounts (a card paid from chequing and savings).
+  ins.forEach(function (x) {
+    if (x.pair) return;
+    var near = outs.filter(function (o) {
+      var days = pDaysBetween(o.date, x.date);
+      return !o.pair && o.acct !== x.acct && days >= -VW.PAIR_BEFORE && days <= VW.PAIR_AFTER + 2;
+    });
+    near.some(function (a, i) {
+      return near.slice(i + 1).some(function (b) {
+        if (Math.abs(x.cad + a.cad + b.cad) > Math.max(5, VW.PAIR_SLACK * x.cad)) return false;
+        a.pair = x; b.pair = x; x.pair = a;
+        return true;
+      });
     });
   });
   outs.forEach(function (o) {
@@ -593,6 +608,7 @@ function vwHabitsPage(m) {
   p.rows.push([''].concat(months.map(function (mo) { return vwTxt(pMonthName(mo) + (mo === cur ? ' (so far)' : '')); }), ['Per month (avg)', 'Per year', '🎯 Your limit / month', 'vs limit', 'key']));
   vwHead(p, 3, 8); p.freeze = 4;
 
+  var top = [];
   function block(label, test, bg) {
     var r = p.rows.length; vwBand(p, r, 8, label, bg, '#202124');
     var catRows = [];
@@ -601,11 +617,11 @@ function vwHabitsPage(m) {
     cats.sort(function (a, b) { return tot(b) - tot(a); }).forEach(function (cg) {
       var L = spend.filter(function (e) { return e.catg === cg; });
       var mv = months.map(function (mo) { return vwR(-L.filter(function (e) { return e.date.slice(0, 7) === mo; }).reduce(function (s, e) { return s + e.cad; }, 0)); });
-      if (test === unplanned) m.unplannedYear = (m.unplannedYear || 0) + (mv[0] + mv[1]) / 2 * 12;
+      if (test === unplanned) { m.unplannedYear = (m.unplannedYear || 0) + (mv[0] + mv[1]) / 2 * 12; top.push([cg, (mv[0] + mv[1]) / 2]); }
       var row = p.rows.length + 1;   // sheet row
       var lim = limits[cg] !== undefined ? limits[cg] : (test === unplanned && VW.LIMITS[cg] !== undefined ? VW.LIMITS[cg] : '');
-      p.rows.push(['   ' + cg + '  (' + L.length + ' times)'].concat(mv, ['=AVERAGE(B' + row + ':C' + row + ')', '=E' + row + '*12', lim,
-        '=IF(G' + row + '="","set a limit →",IF(E' + row + '<=G' + row + ',"✅ within","⚠ over by "&TEXT(E' + row + '-G' + row + ',"$#,##0")))', cg]));
+      p.rows.push(['   ' + cg + '  (' + L.length + ' times)'].concat(mv, ['=IF(B' + row + '+C' + row + '=0,"new",AVERAGE(B' + row + ':C' + row + '))', '=IF(ISNUMBER(E' + row + '),E' + row + '*12,"")', lim,
+        '=IF(G' + row + '="",' + (test === unplanned ? '"set a limit →"' : '""') + ',IF(N(E' + row + ')<=G' + row + ',"✅ within","⚠ over by "&TEXT(N(E' + row + ')-G' + row + ',"$#,##0")))', cg]));
       catRows.push(row);
       vwStyle(p, row - 1, row, 0, 1, { bold: true });
       vwStyle(p, row - 1, row, 6, 7, { bg: VW.C.INPUT });
@@ -636,6 +652,8 @@ function vwHabitsPage(m) {
   p.rows.push(['Cash withdrawals count as unplanned until the Cash log says what they paid for (e.g. workers at the house).']);
   vwStyle(p, sr + 1, sr + 2, 0, 1, { italic: true, color: VW.C.GREY });
   m.unplannedYearRow = uTot;
+  var biggest = top.sort(function (a, b) { return b[1] - a[1]; }).slice(0, 3).map(function (x) { return x[0] + ' $' + vwR(x[1]).toLocaleString('en-US'); });
+  p.rows[1][0] = '👉 Spending that just happens costs about $' + vwR((m.unplannedYear || 0) / 12).toLocaleString('en-US') + ' a month ($' + vwR(m.unplannedYear || 0).toLocaleString('en-US') + ' a year). Biggest: ' + biggest.join(', ') + '. Yellow column = your own limit. ➕ opens a row. CAD; average = the two full months.';
   vwNumFmt(p, 4, sr, 1, 7, VW_CAD);
   vwNumFmt(p, sr, sr + 1, 1, 4, '0%'); vwNumFmt(p, sr, sr + 1, 5, 6, VW_CAD);
   vwStyle(p, sr, sr + 1, 0, 8, { bg: VW.C.NAVY, color: VW.C.WHITE, bold: true, size: 12 });
@@ -667,7 +685,8 @@ function vwForecastPage(m) {
   for (var k = 0; k <= VW.FORECAST_MONTHS; k++) months.push(pMonthAdd(cur, k));
   var est = vwEstimates(m), rateINR = m.rate.INR || 0.0162;
   var left = 1 - (+m.today.slice(8, 10)) / pLastDay(cur);
-  var cash0 = m.nowInfo.cash || 0;
+  var hstHeld = (m.nowInfo.banks || []).reduce(function (s, b) { return s + (b.hst || 0) * (m.rate[m.curOf(b.name)] || 1); }, 0);
+  var cash0 = (m.nowInfo.cash || 0) - hstHeld;
   var p = vwPage(VW.FORECAST, '🔮 Forecast — the next ' + VW.FORECAST_MONTHS + ' months (planned, CAD)',
     'Folded: click ➕ on the far left. Starts from the cash in your accounts today; the first column is only the rest of this month. Pay is after HST. Day-to-day spending uses the pace of the last 2 months. Rebuilt ' + vwStamp() + '.');
   var W = 2 + months.length;
@@ -708,7 +727,10 @@ function vwForecastPage(m) {
   var net = tin.map(function (v, i) { return v + tout[i]; }), run = cash0, low = { v: Infinity, mo: '' };
   var ends = net.map(function (v, i) { run += v; if (run < low.v) low = { v: run, mo: months[i] }; return vwR(run); });
   p.rows.push(['Left over that month'].concat(net, [sumArr(net)]));
-  p.rows.push(['Cash at month-end (starting from $' + vwR(cash0).toLocaleString('en-US') + ' today)'].concat(ends, ['']));
+  p.rows.push(['Cash at month-end (from $' + vwR(cash0).toLocaleString('en-US') + ' today, after $' + vwR(hstHeld).toLocaleString('en-US') + ' HST kept for CRA)'].concat(ends, ['']));
+  var typical = net.slice(1).sort(function (a, b) { return a - b; })[Math.floor((net.length - 1) / 2)];
+  p.rows[1][0] = '👉 A typical month ' + (typical >= 0 ? 'leaves you $' : 'costs you $') + Math.abs(typical).toLocaleString('en-US') + (typical >= 0 ? ' to spare' : ' more than comes in') +
+    '. Cash is lowest at ' + (low.v < 0 ? '−' : '') + '$' + Math.abs(vwR(low.v)).toLocaleString('en-US') + ' in ' + pMonthName(low.mo) + ' and ends at $' + ends[ends.length - 1].toLocaleString('en-US') + '. ➕ opens a row. Not included: house construction with no dated row, and income tax. Pay is after HST. Day-to-day = pace of the last 2 full months.';
   var e0 = p.rows.length - 2;
   vwStyle(p, e0, e0 + 2, 0, W, { bg: VW.C.NAVY, color: VW.C.WHITE, bold: true });
   vwNumFmt(p, 4, p.rows.length, 1, W, VW_CAD);
@@ -761,7 +783,7 @@ function vwHealthChecks(m) {
     unl.length ? unl.length + ' without a category · $' + vwR(-unl.reduce(function (s, e) { return s + e.cad; }, 0)).toLocaleString('en-US') + ' net out' : 'All labelled',
     unl.length ? 'Money › 🔴 Needs you › 🏷 — add Payees rules (or ask Claude), then Finance › Re-label unlabelled rows' : '—');
 
-  var od = m.ev.filter(function (e) { return e.tag === 'overdue' || e.tag === 'check'; });
+  var od = m.ev.filter(function (e) { return (e.tag === 'overdue' && e.kind !== 'Fees & charges') || e.tag === 'check'; });
   add('4. Every bill paid on time', od.length ? '🔴' : '✅',
     od.length ? od.map(function (e) { return e.what + ' (' + e.status.replace(/^\S+\s/, '') + ')'; }).join(' · ') : 'Nothing overdue',
     od.length ? 'Pay it, or set it to Cancel / Later on Commitments' : '—');
@@ -798,8 +820,9 @@ function vwTodo(m) {
   var out = [], soon = pAddDays(m.today, VW.SOON_DAYS);
   var byHow = function (e) { return e.how && !VW.AUTO_PAY.test(e.how) ? ' by ' + e.how : ''; };
   var money = function (e) { return (e.cur === 'INR' ? '₹' : '$') + Math.abs(vwR(e.amt)).toLocaleString('en-US'); };
-  m.ev.filter(function (e) { return e.tag === 'overdue'; }).forEach(function (e) {
-    out.push({ key: 'cm|' + e.what + '|' + e.date, what: 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + byHow(e), when: '🔴 overdue since ' + vwDay(e.date), cm: e.what });
+  m.ev.filter(function (e) { return e.tag === 'overdue' && e.kind !== 'Fees & charges'; }).forEach(function (e) {
+    var auto = VW.AUTO_PAY.test(e.how || '');
+    out.push({ key: 'cm|' + e.what + '|' + e.date, what: (auto ? 'Check ' + e.what + ': the auto-debit of ' + money(e) + ' was not seen in ' + vwShort(e.acct) : 'Pay ' + e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + byHow(e)), when: '🔴 overdue since ' + vwDay(e.date), cm: e.what });
   });
   m.moves.forEach(function (mv) {
     var abroad = m.curOf(mv.to) !== m.curOf(mv.from);
@@ -898,7 +921,7 @@ function vwTodayPage(m) {
 
   // ---- 1. Am I OK? ----------------------------------------------------------------
   var todo = vwTickRows(m), checks = vwHealthChecks(m);
-  var overdue = m.ev.filter(function (e) { return e.tag === 'overdue'; }).length;
+  var overdue = m.ev.filter(function (e) { return e.tag === 'overdue' && e.kind !== 'Fees & charges'; }).length;
   var open = todo.filter(function (t) { return !t.ticked && !/^✅/.test(t.seen); }).length;
   var bad = checks.filter(function (c) { return c.ok !== '✅'; }).length;
   var parts = [];
@@ -1378,7 +1401,7 @@ function vwNetWorthPage(m) {
 
   function item(x, depth) {
     var r = p.rows.length, inv = invested[x.name] !== undefined ? invOf(x) : undefined, gain = inv !== undefined && x.amt ? x.amt - inv : '';
-    p.rows.push(['', '            ' + x.name, x.amt, x.cad, inv !== undefined ? inv : '', gain, x.asOf, x.from]);
+    p.rows.push(['', (depth === 1 ? '      ' : '            ') + x.name, x.amt, x.cad, inv !== undefined ? inv : '', gain, x.asOf, x.from]);
     var f = x.cur === 'INR' ? VW_INR : VW_CAD2;
     vwNumFmt(p, r, r + 1, 2, 3, f); vwNumFmt(p, r, r + 1, 3, 4, VW_CAD); vwNumFmt(p, r, r + 1, 4, 6, f);
     vwStyle(p, r, r + 1, 6, 8, { color: C.GREY });
@@ -1410,7 +1433,7 @@ function vwNetWorthPage(m) {
       if (!byInst) { inK.forEach(function (x) { item(x); }); p.groups.push([s1, p.rows.length]); return; }
       vwUniq(inK.map(function (x) { return vwInstitution(x.name); })).forEach(function (inst) {
         var inI = inK.filter(function (x) { return vwInstitution(x.name) === inst; });
-        if (inI.length === 1) { item(inI[0]); return; }   // one account: nothing to fold
+        if (inI.length === 1) { item(inI[0], 1); return; }   // one account: nothing to fold
         var ir = p.rows.length;
         p.rows.push(['', '      ' + inst + '  (' + inI.length + ')', '', sum(inI)]);
         vwStyle(p, ir, ir + 1, 1, 2, { bold: true }); totals(ir, inI);
@@ -1641,6 +1664,10 @@ function vwTidyCommitments(ss) {
   sh.getRange(2, 3, sh.getMaxRows() - 1, 1).setNumberFormat('#,##0.00');
   var titles = vwWriteSections(sh, sections, [list(1, 12), list(PLAN.HOW_COL, PLAN.HOW_COL + 1), list(PLAN.CARD_COL, PLAN.CARD_COL + 2)], 2, 12);
   fxCommitFormulas(sh);
+  var dueCells = sh.getRange(2, 6, sh.getLastRow() - 1, 1), dueVals = dueCells.getValues();
+  var dayOf = function (v) { return Math.round((v.getTime() - new Date(1899, 11, 30).getTime()) / 864e5); };
+  dueCells.setValues(dueVals.map(function (x) { return [x[0] instanceof Date && x[0].getFullYear() < 1901 ? dayOf(x[0]) : x[0]]; }));
+  dueCells.setNumberFormats(dueVals.map(function (x) { return [x[0] instanceof Date && x[0].getFullYear() >= 1901 ? 'dd/mm/yyyy' : '0']; }));
   // A folded section shows what it costs a month (N = per month in CAD).
   titles.forEach(function (t) {
     if (t.n) sh.getRange(t.row, 3).setFormula('=SUM(N' + (t.row + 1) + ':N' + (t.row + t.n) + ')').setNumberFormat('$#,##0" /month"');
@@ -1677,8 +1704,8 @@ function vwTidyAssets(ss) {
     sign[t.title] = t.row;
   });
   var rows = function (test) { return titles.filter(function (t, i) { return i && test(t.title); }).map(function (t) { return 'K' + t.row; }).join('+') || '0'; };
-  var own = rows(function (x) { return x !== order[5]; }), owe = rows(function (x) { return x === order[5]; });
-  sh.getRange(titles[0].row, 3).setFormula('="Own "&TEXT(' + own + ',"$#,##0")&"   ·   Owe "&TEXT(' + owe + ',"$#,##0")&"   ·   Net worth "&TEXT(' + own + '-(' + owe + '),"$#,##0;-$#,##0")');
+  var own = rows(function (x) { return x !== order[5]; }), owe = rows(function (x) { return x === order[5]; }) + '+MAX(0,-N(Dashboard!B20))';
+  sh.getRange(titles[0].row, 3).setFormula('="Own "&TEXT(' + own + ',"$#,##0")&"   ·   Owe "&TEXT(' + owe + ',"$#,##0")&" (with HST for CRA)   ·   Net worth "&TEXT(' + own + '-(' + owe + '),"$#,##0;-$#,##0")');
 }
 
 /* ---------------------------------------------------------------------------

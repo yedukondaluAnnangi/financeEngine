@@ -25,7 +25,7 @@ duplicated, attention first, and it must not "leak". In their words Commitments 
 
 ## 2. How it runs
 - `.gs` in `AppScripts/`; push to `main` deploys via GitHub Action (`clasp push --force`). Check: `gh run list --limit 1`.
-- Rebuild: bump `PLAN.VERSION` in `Plan.gs` (now `2026-10-30.2`); the 5-minute `pollInbox` trigger does the rest.
+- Rebuild: bump `PLAN.VERSION` in `Plan.gs` (see the file); the 5-minute `pollInbox` trigger does the rest.
 - Poll order: (1) upload if files are waiting, return; (2) `planDaily` upkeep (`refreshDashboard`), return if it worked;
   (3) `planPagesOnce` (Now), return if it worked; (4) `vwMaybeRefresh` (pages).
 - Upload safety verified: in `runBatch` the dashboard refresh is the **last** step, after rows, file moves and email.
@@ -54,8 +54,6 @@ duplicated, attention first, and it must not "leak". In their words Commitments 
 | Transactions | raw, warning lock | Do not touch |
 | Payees | yours | Labelling rules. Do not change logic |
 
-### Waiting to be deleted (see §6)
-📒 Ledger, 🗂 Summary, Expected payments (replaced; the code no longer builds or reads them).
 
 ### Hidden engine (keep)
 `Now` (balance roll-forward, money moves; Today and Assets & Debts read it), `Dashboard` (card owed, HST, monthly email),
@@ -100,7 +98,6 @@ A row with **blank column A** and its title in B; every reader skips it. `vwTidy
 
 ## 5. Known problems / to check first
 1. Fixed 31 Oct: `vwWriteSections` overwrites first and clears only leftover rows below, so a failure cannot erase typed rows.
-2. **Assets & Debts net worth differs from 🏛 Net worth**: the tab's Debts total excludes HST owed (a Dashboard figure, not a row). Add it or make both read one number.
 3. Column J on Assets & Debts: verify Debts rows and the house after rebuilds.
 4. Commitment sections sort by group: a transit toll landed under Essentials; a penal charge under Fees. Fine, or re-label.
 5. Habits rows: confirm limits survived the rebuilds (`vw_limits`, hidden key column).
@@ -109,7 +106,6 @@ A row with **blank column A** and its title in B; every reader skips it. `vwTidy
 8. `Plan.gs` comments and `PLAN_SEED` still mention old things; repo already holds a pay amount in `Plan.gs` from an earlier session, against the public-repo rule. Ask the user before rewriting history.
 
 ## 6. Open work
-1. **Delete** 📒 Ledger, 🗂 Summary, Expected payments once 📒 Money is complete: add them to the backup file first (frozen values), verify no `#REF`. The user already asked for this.
 2. Assets & Debts: user fills Wealthsimple net deposits per account; gold when bought.
 3. **Second JioFiber**: the user says there are two; only one exists in any data. Needs amount, due day, how paid.
 4. **POP sheeting row**: choose A ₹ balance still owed, B fully paid, or C other (see private doc). Row still shows the full amount as overdue.
