@@ -117,8 +117,13 @@ function vwRefresh() {
   var props = PropertiesService.getScriptProperties(), start = Date.now();
   var ss = SpreadsheetApp.openById(CFG.SHEET_ID);
   try { vwTidyInputs(ss); } catch (err) { planIssue('Sorting Commitments / Assets & Debts failed', err); }
+  SpreadsheetApp.flush();
   var d = vwRead(ss);
   var m = vwModel(d);
+  // Right after a deploy Now is still recalculating and reads as $0: build from it on a later poll (3 tries at most).
+  var waits = +(props.getProperty('vw_now_waits') || 0);
+  if (!(m.nowInfo.cash > 0) && waits < 3) { props.setProperty('vw_now_waits', String(waits + 1)); return false; }
+  props.deleteProperty('vw_now_waits');
   // Every page is worked out (cheap — some read numbers from others), then written in order.
   var built = {
     habits: vwHabitsPage(m), forecast: vwForecastPage(m), today: vwTodayPage(m), networth: vwNetWorthPage(m), money: vwMoneyPage(m)
@@ -245,6 +250,9 @@ function vwModel(d) {
 
   // Future: recurring payments (Commitments), with what the sheet already knows about them.
   var horizon = pMonthAdd(today.slice(0, 7), VW.FORECAST_MONTHS) + '-' + pLastDay(pMonthAdd(today.slice(0, 7), VW.FORECAST_MONTHS));
+  // The newest statement row per account: nothing can be called late past that date.
+  var dataTo = {};
+  ev.forEach(function (e) { if (e.past && (!dataTo[e.acct] || e.date > dataTo[e.acct])) dataTo[e.acct] = e.date; });
   var cms = planReadCommitments(d.cm, rate);
   m.cms = cms;
   m.cardRows = [];
@@ -261,7 +269,9 @@ function vwModel(d) {
     var from = today;
     if (/^✅/.test(st)) from = next || pAddDays(today, 1);
     else if ((/^🔴/.test(st) && cycle !== today) || (/^⏳/.test(st) && cycle && cycle < today)) {
-      ev.push(vwCm(m, c, r, cycle || today, '🔴 Overdue since ' + vwDay(cycle || today), 'overdue'));
+      var noData = cycle && (dataTo[m.fullAcct(c.acct)] || '') < cycle;
+      ev.push(noData ? vwCm(m, c, r, cycle, '🗓 Expected — the statement for that date is not in yet', 'planned')
+                     : vwCm(m, c, r, cycle || today, '🔴 Overdue since ' + vwDay(cycle || today), 'overdue'));
       from = pAddDays(cycle || today, 1);
     } else if (/^❔/.test(st)) {
       if (cycle && cycle < today) {
@@ -842,7 +852,7 @@ function vwTodo(m) {
     out.push({ key: 'cd|' + e.what + '|' + e.date, what: e.what + ' ' + money(e) + ' from ' + vwShort(e.acct) + byHow(e) + (/^Pay down/.test(e.what) ? ' — keeps the reported balance under target' : ''), when: 'by ' + vwDay(e.date), cm: e.cmName });
   });
   var waiting = m.cms.filter(function (c) { return !c.income && (!c.decision || /^review$/i.test(c.decision)); }).length;
-  if (waiting) out.push({ key: 'ex|review', what: 'Decide ' + waiting + ' orange row(s) on Commitments: Keep, Cancel or Later', when: 'this week' });
+  if (waiting) out.push({ key: 'ex|review', what: 'Decide on Commitments (Keep, Cancel or Later): ' + m.cms.filter(function (c) { return !c.income && (!c.decision || /^review$/i.test(c.decision)); }).map(function (c) { return c.name; }).join(', '), when: 'this week' });
   if (vwStale(m).length) out.push({ key: 'st|upload', what: 'Upload statements: ' + m.stale.map(function (a) { return vwShort(a.name); }).join(', '), when: 'pay night' });
   m.todo = out;
   return out;
@@ -1682,7 +1692,7 @@ function vwTidyCommitments(ss) {
   dueCells.setNumberFormats(dueVals.map(function (x) { return [x[0] instanceof Date && x[0].getFullYear() >= 1901 ? 'dd/mm/yyyy' : '0']; }));
   // A folded section shows what it costs a month (N = per month in CAD).
   titles.forEach(function (t) {
-    if (t.n) sh.getRange(t.row, 3).setFormula('=SUM(N' + (t.row + 1) + ':N' + (t.row + t.n) + ')').setNumberFormat('$#,##0" /month"');
+    if (t.n && !/^✂/.test(t.title)) sh.getRange(t.row, 3).setFormula('=SUM(N' + (t.row + 1) + ':N' + (t.row + t.n) + ')').setNumberFormat('$#,##0" /month";;');
   });
 }
 
